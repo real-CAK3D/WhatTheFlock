@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flock You USB Test</title>
+<style>
+  :root { --bg:#0f1115; --fg:#e6e6e6; --mute:#8a8f98; --ok:#3fb950; --bad:#f85149; --card:#181b22; --line:#2a2f3a; --accent:#58a6ff; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.4 system-ui, sans-serif; }
+  main { padding:16px; max-width:720px; margin:auto; }
+  h1 { font-size:20px; margin:0 0 12px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px; margin-bottom:12px; }
+  .row { display:flex; justify-content:space-between; gap:8px; padding:4px 0; }
+  .ok { color:var(--ok); } .bad { color:var(--bad); } .mute { color:var(--mute); }
+  button { background:var(--accent); color:#000; border:0; border-radius:8px; padding:12px 14px; font-size:15px; font-weight:600; margin:4px 4px 4px 0; }
+  button:disabled { opacity:.4; }
+  pre { background:#000; color:#9fe; font:12px/1.35 ui-monospace, monospace; padding:8px; border-radius:8px; height:40vh; overflow:auto; white-space:pre-wrap; word-break:break-all; margin:0; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Flock You – phone USB test</h1>
+
+  <div class="card">
+    <div class="row"><span>Secure page (HTTPS)</span><span id="sec"></span></div>
+    <div class="row"><span>Web Serial API</span><span id="hasSerial"></span></div>
+    <div class="row"><span>WebUSB API</span><span id="hasUsb"></span></div>
+    <div class="row"><span>Geolocation API</span><span id="hasGeo"></span></div>
+  </div>
+
+  <div class="card">
+    <button id="bSerial">Connect (Web Serial)</button>
+    <button id="bUsb">Connect (WebUSB)</button>
+    <button id="bCfg" disabled>Send get_config</button>
+    <button id="bGps">Test GPS</button>
+    <div class="row"><span>Link</span><span id="link" class="mute">not connected</span></div>
+    <div class="row"><span>Lines received</span><span id="nLines">0</span></div>
+    <div class="row"><span>Two-way (config reply)</span><span id="twoWay" class="mute">not tested</span></div>
+    <div class="row"><span>GPS</span><span id="gps" class="mute">not tested</span></div>
+  </div>
+
+  <pre id="log"></pre>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const yes = (el, ok, t) => { el.textContent = t ?? (ok ? 'yes' : 'no'); el.className = ok ? 'ok' : 'bad'; };
+yes($('sec'), window.isSecureContext);
+yes($('hasSerial'), 'serial' in navigator);
+yes($('hasUsb'), 'usb' in navigator);
+yes($('hasGeo'), 'geolocation' in navigator);
+
+const logEl = $('log');
+function log(s) {
+  logEl.textContent += s + '\n';
+  if (logEl.textContent.length > 60000) logEl.textContent = logEl.textContent.slice(-40000);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+let lines = 0, buf = '', writeFn = null;
+const dec = new TextDecoder(), enc = new TextEncoder();
+
+function onText(t) {
+  buf += t;
+  let i;
+  while ((i = buf.indexOf('\n')) >= 0) {
+    const line = buf.slice(0, i).replace(/\r$/, '');
+    buf = buf.slice(i + 1);
+    if (!line) continue;
+    lines++; $('nLines').textContent = lines;
+    log(line);
+    if (line.includes('"event":"config"')) yes($('twoWay'), true, 'working');
+  }
+}
+
+function connected(how) {
+  yes($('link'), true, 'connected via ' + how);
+  $('bCfg').disabled = false;
+}
+function failed(how, e) {
+  yes($('link'), false, how + ' failed');
+  log('[' + how + '] ' + (e && e.message || e));
+}
+
+// ---- Web Serial ----
+$('bSerial').onclick = async () => {
+  try {
+    const port = await navigator.serial.requestPort({ filters: [{ usbVendorId: 0x303a }] });
+    await port.open({ baudRate: 115200 });
+    // DTR on, RTS off: DTR+RTS combinations drive the S3's reset/boot lines.
+    try { await port.setSignals({ dataTerminalReady: true, requestToSend: false }); } catch {}
+    const writer = port.writable.getWriter();
+    writeFn = s => writer.write(enc.encode(s));
+    connected('Web Serial');
+    const reader = port.readable.getReader();
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      onText(dec.decode(value, { stream: true }));
+    }
+  } catch (e) { failed('Web Serial', e); }
+};
+
+// ---- WebUSB (raw CDC-ACM) ----
+$('bUsb').onclick = async () => {
+  try {
+    const dev = await navigator.usb.requestDevice({ filters: [{ vendorId: 0x303a }] });
+    await dev.open();
+    if (!dev.configuration) await dev.selectConfiguration(1);
+    let ctrlIf = null, dataIf = null, epIn = null, epOut = null;
+    for (const itf of dev.configuration.interfaces) {
+      const alt = itf.alternates[0];
+      if (alt.interfaceClass === 0x02 && ctrlIf === null) ctrlIf = itf.interfaceNumber;
+      if (alt.interfaceClass === 0x0a) {
+        dataIf = itf.interfaceNumber;
+        for (const ep of alt.endpoints) {
+          if (ep.type === 'bulk' && ep.direction === 'in') epIn = ep.endpointNumber;
+          if (ep.type === 'bulk' && ep.direction === 'out') epOut = ep.endpointNumber;
+        }
+      }
+    }
+    log(`[WebUSB] ctrl if=${ctrlIf} data if=${dataIf} in=${epIn} out=${epOut}`);
+    if (ctrlIf !== null) await dev.claimInterface(ctrlIf);
+    await dev.claimInterface(dataIf);
+    const ctl = { requestType: 'class', recipient: 'interface', index: ctrlIf ?? dataIf };
+    // SET_LINE_CODING 115200 8N1
+    const lc = new DataView(new ArrayBuffer(7));
+    lc.setUint32(0, 115200, true); lc.setUint8(4, 0); lc.setUint8(5, 0); lc.setUint8(6, 8);
+    try { await dev.controlTransferOut({ ...ctl, request: 0x20, value: 0 }, lc.buffer); } catch (e) { log('[WebUSB] line coding: ' + e.message); }
+    // SET_CONTROL_LINE_STATE: DTR=1, RTS=0
+    try { await dev.controlTransferOut({ ...ctl, request: 0x22, value: 0x01 }); } catch (e) { log('[WebUSB] line state: ' + e.message); }
+    writeFn = s => dev.transferOut(epOut, enc.encode(s));
+    connected('WebUSB');
+    for (;;) {
+      const r = await dev.transferIn(epIn, 512);
+      if (r.data && r.data.byteLength) onText(dec.decode(r.data, { stream: true }));
+    }
+  } catch (e) { failed('WebUSB', e); }
+};
+
+$('bCfg').onclick = async () => {
+  try { await writeFn('{"cmd":"get_config"}\n'); log('> {"cmd":"get_config"}'); $('twoWay').textContent = 'waiting…'; }
+  catch (e) { log('[send] ' + e.message); }
+};
+
+$('bGps').onclick = () => {
+  $('gps').textContent = 'asking…';
+  navigator.geolocation.getCurrentPosition(
+    p => yes($('gps'), true, `${p.coords.latitude.toFixed(5)}, ${p.coords.longitude.toFixed(5)} ±${Math.round(p.coords.accuracy)}m`),
+    e => yes($('gps'), false, e.message),
+    { enableHighAccuracy: true, timeout: 20000 });
+};
+</script>
+</body>
+</html>
