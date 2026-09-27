@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<base href="/phone/">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f1115">
+<title>Flock You Mobile</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="vendor/leaflet.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <div class="stat" id="usbStat"><span class="dot"></span><span class="lbl">USB</span><span class="val">off</span></div>
+  <div class="stat" id="gpsStat"><span class="dot"></span><span class="lbl">GPS</span><span class="val">off</span></div>
+  <div class="stat"><span class="lbl">Cams</span><span class="val" id="nDev">0</span></div>
+  <div class="stat"><span class="lbl">Hits</span><span class="val" id="nHits">0</span></div>
+  <button id="bConnect" class="primary">Connect</button>
+</header>
+
+<section id="tab-map" class="tab active">
+  <div id="map"></div>
+  <button id="bFollow" class="fab on" title="Follow my location">◎</button>
+</section>
+
+<section id="tab-list" class="tab">
+  <div class="toolbar">
+    <select id="sortBy">
+      <option value="last">Most recent</option>
+      <option value="tier">Highest tier</option>
+      <option value="rssi">Strongest signal</option>
+      <option value="hits">Most hits</option>
+    </select>
+  </div>
+  <div id="devList"></div>
+</section>
+
+<section id="tab-log" class="tab">
+  <div class="toolbar">
+    <label><input type="checkbox" id="logDet" checked> Detections</label>
+    <label><input type="checkbox" id="logOther" checked> Other</label>
+    <button id="bClearLog">Clear</button>
+  </div>
+  <pre id="log"></pre>
+</section>
+
+<section id="tab-set" class="tab">
+  <div class="card">
+    <h2>Beeps on the board</h2>
+    <p class="mute">Mutes the buzzer only. Detections still log. Saved on the board.</p>
+    <div id="beeps"><p class="mute">Connect the board to load these.</p></div>
+  </div>
+  <div class="card">
+    <h2>Board storage</h2>
+    <p class="mute">Pull detections the board saved while running without the phone. These have no GPS.</p>
+    <button data-dump="live">Pull this session</button>
+    <button data-dump="prev">Pull previous session</button>
+  </div>
+  <div class="card">
+    <h2>Phone</h2>
+    <label class="sw"><input type="checkbox" id="optWake" checked> Keep screen on while connected</label>
+    <label class="sw"><input type="checkbox" id="optVibe" checked> Vibrate on new camera</label>
+    <label class="sw"><input type="checkbox" id="optTrack" checked> Record my route</label>
+    <label class="sw">Minimum tier to show
+      <select id="optMinTier">
+        <option value="0">0 – everything</option>
+        <option value="1">1</option>
+        <option value="2">2</option>
+        <option value="3">3</option>
+        <option value="4">4 – fingerprint only</option>
+      </select>
+    </label>
+  </div>
+  <div class="card">
+    <h2>Export</h2>
+    <button data-exp="csv">Cameras CSV</button>
+    <button data-exp="hits">All hits CSV</button>
+    <button data-exp="kml">KML (Google Earth)</button>
+    <button data-exp="json">Full backup JSON</button>
+    <label class="filebtn">Restore backup<input type="file" id="importFile" accept=".json,application/json"></label>
+  </div>
+  <div class="card">
+    <h2>Data</h2>
+    <p class="mute" id="storeInfo"></p>
+    <button id="bClear" class="danger">Clear all data on this phone</button>
+  </div>
+  <p class="mute small">Flock You Mobile · talks to the XIAO over USB (WebUSB). GPS comes from this phone.</p>
+</section>
+
+<nav>
+  <button data-tab="map" class="active">Map</button>
+  <button data-tab="list">Cameras</button>
+  <button data-tab="log">Log</button>
+  <button data-tab="set">Settings</button>
+</nav>
+
+<div id="toast"></div>
+
+<script src="vendor/leaflet.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
