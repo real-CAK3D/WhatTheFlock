@@ -426,7 +426,8 @@ function showPreview() {
     <div class="ns-head"><div><b>${mode} To ${esc(navDest.name)}</b><div class="mute small1">${esc(navDest.label)}</div></div><button id="nsClose">✕</button></div>
     <div id="nsRoutes">${routes.map((r, i) => `
       <div class="rt${i === selIdx ? ' sel' : ''}" data-r="${i}">
-        <div><b>${fmtDur(r.duration)}</b> · ${fmtDist(r.total)}
+        <div><b>${fmtDur(r.duration + (typeof routeDelayAhead === 'function' ? routeDelayAhead(r) : 0))}</b> · ${fmtDist(r.total)}
+          ${typeof routeDelayAhead === 'function' && routeDelayAhead(r) >= 60 ? `<span class="chip late">+${fmtDur(routeDelayAhead(r))} traffic</span>` : ''}
           ${r.isFastest ? '<span class="chip">Fastest</span>' : ''}${r.isFewest ? '<span class="chip ok">Fewest cameras</span>' : ''}</div>
         <div class="small1">${camSummary(r)}${r.capped ? ' <span class="mute">(first part of route)</span>' : ''}</div>
       </div>`).join('')}</div>
@@ -642,9 +643,12 @@ function paintBanner(step, dist, next) {
   ui.nbThen.hidden = !thenClose;
   if (thenClose) ui.nbThen.textContent = 'Then ' + stepArrow(next);
   const left = Math.max(0, rt.total - nav.along);
-  const secs = rt.duration * (left / rt.total);
+  // Reported incident delays still ahead on the route (traffic.js, needs a TomTom key).
+  const delay = typeof routeDelayAhead === 'function' ? routeDelayAhead(rt, nav.along) : 0;
+  const secs = rt.duration * (left / rt.total) + delay;
   ui.nvEta.textContent = fmtClock(Date.now() + secs * 1000);
-  ui.nvLeft.textContent = `${fmtDur(secs)} · ${fmtDist(left)}`;
+  ui.nvEta.classList.toggle('late', delay >= 300);
+  ui.nvLeft.textContent = `${fmtDur(secs)} · ${fmtDist(left)}${delay >= 60 ? ` · +${fmtDur(delay)} traffic` : ''}`;
   const ahead = rt.cams.filter(c => c.at > nav.along - 20);
   ui.nvCam.innerHTML = ahead.length
     ? `📷 ${fmtDist(Math.max(0, ahead[0].at - nav.along))}<span class="mute"> · ${ahead.length} left</span>`

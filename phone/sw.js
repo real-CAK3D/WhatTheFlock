@@ -4,11 +4,11 @@
 //    (offline.js) and is never trimmed; 'fy-tiles' is a rolling cache of
 //    whatever you've viewed.
 //  - OpenFreeMap style/TileJSON: network first with a short timeout, cached copy offline.
-const SHELL = 'fy-shell-v6';
+const SHELL = 'fy-shell-v7';
 const TILES = 'fy-tiles-v1';
 const OFFLINE = 'fy-offline';
 const MAX_TILES = 8000;
-const FILES = ['./', 'index.html', 'app.js', 'layers.js', 'map3d.js', 'basemap.js', 'sounds.js', 'extras.js', 'offline.js', 'nav.js',
+const FILES = ['./', 'index.html', 'app.js', 'layers.js', 'map3d.js', 'basemap.js', 'sounds.js', 'extras.js', 'offline.js', 'nav.js', 'speed.js', 'traffic.js',
   'style.css', 'manifest.webmanifest', 'icon.svg',
   'vendor/leaflet.js', 'vendor/leaflet.css', 'vendor/maplibre-gl.js', 'vendor/maplibre-gl.css'];
 const TILE_HOSTS = ['tile.openstreetmap.org', 'tiles.openfreemap.org', 's3.amazonaws.com',

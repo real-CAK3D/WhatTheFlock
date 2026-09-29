@@ -222,6 +222,39 @@ body.navigating .leaflet-top.leaflet-right { top:120px; }
 .maplibregl-ctrl-top-right { top:62px !important; }
 body.navigating .maplibregl-ctrl-top-right { top:120px !important; }
 
+/* ---- speed + traffic ---- */
+#speedo { position:absolute; left:10px; bottom:26px; z-index:640; display:flex; align-items:flex-end; gap:8px; pointer-events:none; }
+#speedo[hidden] { display:none; }
+.spd {
+  width:64px; height:64px; border-radius:50%; background:var(--card); border:3px solid var(--line);
+  display:flex; flex-direction:column; align-items:center; justify-content:center; box-shadow:0 2px 8px rgba(0,0,0,.4);
+}
+.spd b { font-size:24px; line-height:1; }
+.spd span { font-size:10px; color:var(--mute); }
+#speedo.over .spd { background:#b3261e; border-color:#ff6b61; }
+#speedo.over .spd span { color:#fff; }
+#limSign {
+  width:48px; height:60px; background:#fff; color:#000; border:2px solid #000; border-radius:6px;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; box-shadow:0 0 0 2px #fff, 0 2px 8px rgba(0,0,0,.4);
+}
+#limSign[hidden] { display:none; }
+#limSign .lim-top { font-size:7px; font-weight:700; line-height:1.1; text-align:center; }
+#limSign b { font-size:22px; line-height:1.05; }
+#limSign .lim-est { display:none; font-size:8px; color:#555; }
+#limSign.est { border-style:dashed; }
+#limSign.est .lim-est { display:block; }
+/* Metric: round European-style sign. */
+#limSign.metric { width:56px; height:56px; border-radius:50%; border:5px solid #d0021b; box-shadow:0 2px 8px rgba(0,0,0,.4); }
+#limSign.metric .lim-top { display:none; }
+#roadName {
+  align-self:center; background:var(--card); border:1px solid var(--line); border-radius:8px; padding:4px 8px;
+  font-size:12px; max-width:40vw; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+body.navigating #speedo { bottom:84px; }
+.inc-ico { font-size:20px; line-height:26px; text-align:center; filter:drop-shadow(0 1px 2px rgba(0,0,0,.6)); }
+.chip.late { background:#b3261e; }
+.nv-eta b.late { color:#ff6b61; }
+
 /* Night map: invert the light OSM street tiles in 2D, leave markers and satellite alone. */
 body.night .leaflet-tile-pane { filter:invert(1) hue-rotate(180deg) brightness(.85) contrast(.9); }
 body.night.basemap-sat .leaflet-tile-pane { filter:none; }

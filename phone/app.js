@@ -165,6 +165,8 @@ function onFix() {
   }
   if (typeof layersOnFix === 'function') layersOnFix(fix);
   if (typeof navOnFix === 'function') navOnFix(fix);
+  if (typeof speedOnFix === 'function') speedOnFix(fix);
+  if (typeof trafficOnFix === 'function') trafficOnFix(fix);
   mapChanged();
   if (typeof follow3D === 'function') follow3D();
 }
