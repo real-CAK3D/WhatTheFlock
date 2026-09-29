@@ -114,7 +114,7 @@ async function planTrip() {
     const mb = tiles.length * TRIP_AVG_KB / 1024;
     $('tripSummary').innerHTML = `<b>${esc(tripPlan.name)}</b><br>${fmtDist(raw.distance)} · ${fmtDur(raw.duration)} driving${vias.length ? ` · via ${vias.map(v => esc(v.name)).join(', ')}` : ''}<br>
       Download: ${tiles.length.toLocaleString()} map tiles (~${mb < 1024 ? Math.round(mb) + ' MB' : (mb / 1024).toFixed(1) + ' GB'})
-      ${$('tripCams').checked ? ` · cameras (${tripPlan.camChunks.length} lookups)` : ''}${$('tripRoads').checked ? ` · speed limits (${tripPlan.roadChunks.length} lookups)` : ''}.
+      ${$('tripCams').checked ? ` · cameras (${tripPlan.camChunks.length} lookups)` : ''}${$('tripPlaces').checked ? ` · places (${tripPlan.camChunks.length} lookups)` : ''}${$('tripRoads').checked ? ` · speed limits (${tripPlan.roadChunks.length} lookups)` : ''}.
       Keep the screen on and stay on Wi-Fi; if it stops, tap Download again and it continues where it left off.`;
     $('tripGo').hidden = false;
     // Show it on the map.
@@ -165,6 +165,7 @@ async function downloadTrip() {
     };
     if ($('tripCams').checked) await overpassPhase('Mapped cameras', tripPlan.camChunks,
       async ([i, j]) => loadedCells.has(cellKey(i, j)) || !!(await poiDB.get(cellKey(i, j)).catch(() => null)), fetchCells);
+    if ($('tripPlaces').checked) await overpassPhase('Gas, food, rest stops & places', tripPlan.camChunks, havePlaceCell, fetchPlaceCells);
     if ($('tripRoads').checked) await overpassPhase('Speed-limit road data', tripPlan.roadChunks,
       async ([i, j]) => !!(await roadDB.get(i + ':' + j)), fetchRoads);
     finished = true;
@@ -257,6 +258,7 @@ function bindPicker(id) {
     <label class="sw">Detail on each side of the route
       <select id="tripWidth"><option value="3">3 mi</option><option value="5">5 mi</option><option value="10" selected>10 mi</option><option value="25">25 mi</option></select></label>
     <label class="sw"><input type="checkbox" id="tripCams" checked> Mapped cameras along the route</label>
+    <label class="sw"><input type="checkbox" id="tripPlaces" checked> Gas, food, rest stops, tolls &amp; other places</label>
     <label class="sw"><input type="checkbox" id="tripRoads" checked> Speed limits along the route</label>
     <button id="tripPlan">Plan trip</button>
     <p class="small1" id="tripSummary"></p>

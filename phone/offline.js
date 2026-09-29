@@ -126,7 +126,10 @@ async function downloadArea() {
         job.bytes += await putUrl(cache, TERRAIN_TILES.replace('{z}', z).replace('{x}', x).replace('{y}', y), undefined, signal);
       }, signal);
     }
-    if ($('offCams').checked) { job.phase = 'Mapped cameras'; paintJob(); await saveArea(km); }
+    if ($('offCams').checked) {
+      job.phase = 'Mapped cameras'; paintJob(); await saveArea(km);
+      if (typeof ensurePlaceCells === 'function') { job.phase = 'Gas, food, rest stops & places'; paintJob(); await ensurePlaceCells(cellsFor(b)); }
+    }
     areas.push({ id: Date.now(), lat: +c.lat.toFixed(4), lon: +c.lon.toFixed(4), km, tiles: job.total, bytes: job.bytes, terrain: dem.length > 0, ts: Date.now() });
     saveAreas();
     toast(`Offline map saved · ${fmtBytes(job.bytes)}${job.failed ? ` · ${job.failed} tiles failed (run again to retry)` : ''}`);
@@ -209,7 +212,7 @@ window.addEventListener('online', onOnline);
     <label class="sw">Distance each way
       <select id="offKm"><option value="5"></option><option value="15"></option><option value="30" selected></option><option value="60"></option><option value="100"></option></select>
     </label>
-    <label class="sw"><input type="checkbox" id="offCams" checked> Include mapped cameras (ALPR, speed, CCTV…)</label>
+    <label class="sw"><input type="checkbox" id="offCams" checked> Include mapped cameras and places (gas, food, rest stops…)</label>
     <label class="sw"><input type="checkbox" id="offTerrain"> Include terrain (bigger download)</label>
     <p class="mute small1" id="offEst"></p>
     <button id="offGo" class="primary">Download</button>

@@ -17,6 +17,8 @@ to the home screen; works with no cell service once set up.
 | `offline.js` | Offline map downloads and auto-switch when signal drops |
 | `nav.js` | Address search, routing (fewest-cameras option), turn-by-turn voice guidance |
 | `speed.js` | Speedometer, speed limit (OSM, TomTom, estimate), over-limit warning |
+| `trip.js` | Whole-trip offline downloads along a route, saved route for offline directions |
+| `pois.js` | Places: gas, food, rest areas, service plazas, tolls, EV, hotels... find nearby/along route, add stop |
 | `traffic.js` | TomTom live traffic, incidents, alerts, route delays |
 | `config.local.js` | Git-ignored local keys (TomTom). Not committed. |
 | `sw.js` | Service worker: offline app shell and tile caches |

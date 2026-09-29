@@ -263,6 +263,22 @@ body.navigating #speedo { bottom:84px; }
 .tp-res { position:absolute; left:0; right:0; top:100%; z-index:20; background:var(--card); border:1px solid var(--line); border-radius:8px; max-height:240px; overflow:auto; }
 .tp-res[hidden] { display:none; }
 
+/* ---- places ---- */
+.place-ico { font-size:18px; line-height:24px; text-align:center; filter:drop-shadow(0 1px 1px rgba(0,0,0,.7)); }
+.pp-acts { display:flex; gap:6px; margin-top:8px; }
+.pp-acts button { flex:1; padding:7px 8px; font-size:13px; background:#1a73e8; color:#fff; border:0; }
+.chips { display:flex; gap:6px; overflow-x:auto; padding:10px 12px; border-bottom:1px solid var(--line); scrollbar-width:none; }
+.chips::-webkit-scrollbar { display:none; }
+.cchip { flex:none; border-radius:18px; padding:7px 12px; font-size:13px; background:#262b36; white-space:nowrap; }
+#navSheet .chips { flex-wrap:wrap; border:0; padding:8px 0; }
+.lyr-sub { font-size:12px; color:var(--mute); margin:8px 0 4px; border-top:1px solid var(--line); padding-top:8px; }
+.place-grid { display:grid; grid-template-columns:1fr 1fr; gap:4px 8px; max-height:34vh; overflow:auto; }
+.pchip { display:flex; align-items:center; gap:6px; font-size:13px; padding:4px 0; }
+.pchip input { width:18px; height:18px; margin:0; }
+#lyrPanel { max-height:calc(100% - 140px); overflow:auto; }
+#nvFind { font-size:18px; padding:8px 10px; }
+body.navigating #navSheet { bottom:62px; border-radius:16px 16px 0 0; }
+
 /* Night map: invert the light OSM street tiles in 2D, leave markers and satellite alone. */
 body.night .leaflet-tile-pane { filter:invert(1) hue-rotate(180deg) brightness(.85) contrast(.9); }
 body.night.basemap-sat .leaflet-tile-pane { filter:none; }

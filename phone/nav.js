@@ -408,6 +408,10 @@ async function planRoute(silent = false) {
     if (!silent) showPreview();
     let capped = false;
     for (const [i, r] of routes.entries()) { const c = await loadRouteCells(r); if (i === 0) capped = c; }
+    // Toll points come from their own small query; they fill in when ready.
+    if (!silent && typeof countRouteTolls === 'function') countRouteTolls(mine).then(() => {
+      if (routes === mine && !nav && !ui.navSheet.hidden && $('nsRoutes')) showPreview();
+    });
     if (routes !== mine) return;   // user moved on while we were counting
     for (const r of routes) { r.cams = camerasOn(r); r.camsCounted = true; r.capped = capped; }
     const fewest = routes.reduce((a, r, i) => r.cams.length < routes[a].cams.length || (r.cams.length === routes[a].cams.length && r.duration < routes[a].duration) ? i : a, 0);
@@ -438,7 +442,7 @@ function showPreview() {
         <div><b>${fmtDur(r.duration + (typeof routeDelayAhead === 'function' ? routeDelayAhead(r) : 0))}</b> · ${fmtDist(r.total)}
           ${typeof routeDelayAhead === 'function' && routeDelayAhead(r) >= 60 ? `<span class="chip late">+${fmtDur(routeDelayAhead(r))} traffic</span>` : ''}
           ${r.isFastest ? '<span class="chip">Fastest</span>' : ''}${r.isFewest ? '<span class="chip ok">Fewest cameras</span>' : ''}</div>
-        <div class="small1">${camSummary(r)}${r.capped ? ' <span class="mute">(first part of route)</span>' : ''}</div>
+        <div class="small1">${camSummary(r)}${r.tolls ? ` · <span class="warn">💰 ${r.tolls} toll point${r.tolls === 1 ? '' : 's'}</span>` : r.tolls === 0 ? ' · no tolls' : ''}${r.capped ? ' <span class="mute">(first part of route)</span>' : ''}</div>
       </div>`).join('')}</div>
     <div class="ns-acts"><button id="nsStart" class="primary">Start</button><button id="nsBack">Back</button></div>`;
   $('nsClose').onclick = clearDest;
