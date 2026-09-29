@@ -1,10 +1,12 @@
 // Offline support: app shell is cached on install; map tiles are cached as
 // you view them so areas you've driven through still render without signal.
-const SHELL = 'fy-shell-v2';
+const SHELL = 'fy-shell-v3';
 const TILES = 'fy-tiles-v1';
-const MAX_TILES = 4000;
-const FILES = ['./', 'index.html', 'app.js', 'layers.js', 'style.css', 'manifest.webmanifest', 'icon.svg',
-  'vendor/leaflet.js', 'vendor/leaflet.css'];
+const MAX_TILES = 8000;
+const FILES = ['./', 'index.html', 'app.js', 'layers.js', 'map3d.js', 'style.css', 'manifest.webmanifest', 'icon.svg',
+  'vendor/leaflet.js', 'vendor/leaflet.css', 'vendor/maplibre-gl.js', 'vendor/maplibre-gl.css'];
+// Tile hosts: imagery/vector/elevation tiles never change, so serve from cache first.
+const TILE_HOSTS = ['tile.openstreetmap.org', 'tiles.openfreemap.org', 's3.amazonaws.com'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(SHELL).then(c => c.addAll(FILES)).then(() => self.skipWaiting()));
@@ -26,7 +28,17 @@ self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET') return;
 
-  if (url.hostname === 'tile.openstreetmap.org') {
+  // OpenFreeMap style/TileJSON documents point at the current tile build, so
+  // fetch them fresh when online and fall back to the cached copy offline.
+  if (url.hostname === 'tiles.openfreemap.org' && !/\.(pbf|png|webp|json)$/.test(url.pathname)) {
+    e.respondWith(fetch(e.request).then(res => {
+      if (res.ok) caches.open(TILES).then(c => c.put(e.request, res.clone()));
+      return res;
+    }).catch(() => caches.match(e.request).then(r => r || new Response('', { status: 504 }))));
+    return;
+  }
+
+  if (TILE_HOSTS.includes(url.hostname)) {
     e.respondWith(caches.open(TILES).then(async c => {
       const hit = await c.match(e.request);
       if (hit) return hit;

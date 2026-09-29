@@ -107,7 +107,7 @@ let fix = null; // {lat, lon, acc, ts}
 function startGps() {
   if (!('geolocation' in navigator)) { setStat('gpsStat', 'off', 'none'); return; }
   navigator.geolocation.watchPosition(p => {
-    fix = { lat: p.coords.latitude, lon: p.coords.longitude, acc: Math.round(p.coords.accuracy), ts: Date.now(), spd: p.coords.speed };
+    fix = { lat: p.coords.latitude, lon: p.coords.longitude, acc: Math.round(p.coords.accuracy), ts: Date.now(), spd: p.coords.speed, hdg: p.coords.heading };
     setStat('gpsStat', 'on', '±' + fix.acc + 'm');
     onFix();
   }, e => {
@@ -150,6 +150,13 @@ function onFix() {
     }
   }
   if (typeof layersOnFix === 'function') layersOnFix(fix);
+  mapChanged();
+  if (typeof follow3D === 'function') follow3D();
+}
+
+// Tell the 3D view (map3d.js, if loaded) that something it mirrors changed.
+function mapChanged() {
+  if (typeof sync3D === 'function') sync3D();
 }
 
 // ---------------------------------------------------------------- detections
@@ -206,6 +213,7 @@ function ingestDetection(ev, source = 'live') {
   }
   updateCounts();
   scheduleListRender();
+  mapChanged();
 }
 
 function visibleDevices() {
@@ -259,12 +267,14 @@ function updateMarker(d) {
 function redrawMarkers() {
   for (const k in markers) { markers[k].remove(); delete markers[k]; }
   for (const d of visibleDevices()) updateMarker(d);
+  mapChanged();
 }
 
 function setFollow(on) {
   opts.follow = on; saveOpts();
   $('bFollow').classList.toggle('on', on);
   if (on && fix && map) map.panTo([fix.lat, fix.lon]);
+  if (on && typeof follow3D === 'function') follow3D();
 }
 
 // ---------------------------------------------------------------- list
@@ -546,7 +556,7 @@ document.querySelectorAll('[data-dump]').forEach(b => b.onclick = () => send({ c
 function showTab(name) {
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.id === 'tab-' + name));
   document.querySelectorAll('nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
-  if (name === 'map' && map) setTimeout(() => map.invalidateSize(), 50);
+  if (name === 'map' && map) setTimeout(() => { map.invalidateSize(); if (typeof map3d !== 'undefined' && map3d) map3d.resize(); }, 50);
   if (name === 'list') renderList();
   if (name === 'log') renderLog();
   if (name === 'set') updateStoreInfo();

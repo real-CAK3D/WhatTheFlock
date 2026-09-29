@@ -86,6 +86,9 @@ nav button.active { color:var(--accent); font-weight:600; }
 #toast.show { display:block; }
 #toast.alert { background:var(--t4); color:#fff; border:0; }
 
+#map3d { position:absolute; inset:0; z-index:2; display:none; background:#1b1e24; }
+.fab.b3d { bottom:76px; font-size:15px; font-weight:700; }
+.maplibregl-popup-content { background:#fff; color:#111; font-size:13px; border-radius:8px; }
 .fab.lyr { left:12px; right:auto; top:12px; bottom:auto; font-size:20px; }
 #lyrPanel {
   position:absolute; left:12px; top:68px; z-index:600; display:none; width:min(300px, calc(100vw - 24px));

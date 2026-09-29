@@ -216,6 +216,14 @@ function redrawMapped(force = false) {
     const el = document.querySelector(`#lyrPanel [data-count="${k}"]`);
     if (el) el.textContent = n;
   }
+  mapChanged();
+}
+
+// Area to load cameras for, in Leaflet zoom units — from whichever map is showing.
+function viewBox() {
+  if (typeof map3dActive === 'function' && map3dActive()) return view3dBox();
+  const b = map.getBounds();
+  return { s: b.getSouth(), n: b.getNorth(), w: b.getWest(), e: b.getEast(), zoom: map.getZoom() };
 }
 
 function status(msg) { const el = $('lyrStatus'); if (el) el.textContent = msg; }
@@ -224,8 +232,8 @@ async function onView() {
   if (busy) { pendingView = true; return; }
   busy = true;
   try {
-    const b = map.getBounds();
-    const cells = cellsFor({ s: b.getSouth(), n: b.getNorth(), w: b.getWest(), e: b.getEast() });
+    const v = viewBox();
+    const cells = cellsFor(v);
     // Pull anything cached for this view out of IndexedDB first — works offline.
     if (cells.length <= 400) {
       for (const [i, j] of cells) {
@@ -234,7 +242,7 @@ async function onView() {
       }
     }
     redrawMapped();
-    if (map.getZoom() < AUTO_MIN_ZOOM) { status('Zoom in to load mapped cameras'); return; }
+    if (v.zoom < AUTO_MIN_ZOOM) { status('Zoom in to load mapped cameras'); return; }
     const stale = cells.filter(([i, j]) => { const c = loadedCells.get(cellKey(i, j)); return !c || Date.now() - c.ts > CELL_MAX_AGE; });
     if (!stale.length) { status(''); return; }
     if (!navigator.onLine) { status('Offline — showing saved cameras only'); return; }
@@ -341,7 +349,7 @@ function buildPanel() {
   $('bClearPoi').onclick = async () => {
     await poiDB.clear(); loadedCells.clear();
     for (const ls of drawn.values()) ls.forEach(l => l.remove());
-    drawn.clear(); updateLayerInfo(); toast('Cleared saved map cameras');
+    drawn.clear(); updateLayerInfo(); mapChanged(); toast('Cleared saved map cameras');
   };
   updateLayerInfo();
 }
