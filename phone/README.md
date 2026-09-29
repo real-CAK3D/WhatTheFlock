@@ -17,7 +17,7 @@ to the home screen; works with no cell service once set up.
 | `offline.js` | Offline map downloads and auto-switch when signal drops |
 | `nav.js` | Address search, routing (fewest-cameras option), turn-by-turn voice guidance |
 | `sw.js` | Service worker: offline app shell and tile caches |
-| `test/sw-offline.test.mjs` | `node test/sw-offline.test.mjs` â€” offline cache behaviour |
+| `test/sw-offline.test.mjs` | `node test/sw-offline.test.mjs` - offline cache behaviour |
 
 ## Serving
 
