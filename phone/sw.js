@@ -1,9 +1,9 @@
 // Offline support: app shell is cached on install; map tiles are cached as
 // you view them so areas you've driven through still render without signal.
-const SHELL = 'fy-shell-v1';
+const SHELL = 'fy-shell-v2';
 const TILES = 'fy-tiles-v1';
 const MAX_TILES = 4000;
-const FILES = ['./', 'index.html', 'app.js', 'style.css', 'manifest.webmanifest', 'icon.svg',
+const FILES = ['./', 'index.html', 'app.js', 'layers.js', 'style.css', 'manifest.webmanifest', 'icon.svg',
   'vendor/leaflet.js', 'vendor/leaflet.css'];
 
 self.addEventListener('install', e => {

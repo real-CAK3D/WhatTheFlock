@@ -149,6 +149,7 @@ function onFix() {
       if (opts.follow) map.panTo(ll, { animate: true });
     }
   }
+  if (typeof layersOnFix === 'function') layersOnFix(fix);
 }
 
 // ---------------------------------------------------------------- detections
@@ -242,7 +243,7 @@ function popupHtml(d) {
 }
 
 function updateMarker(d) {
-  if (!map || !d.bestLoc) return;
+  if (!map || !d.bestLoc || opts.layers?.det === false) return;
   const ll = [d.bestLoc.lat, d.bestLoc.lon];
   let mk = markers[d.mac];
   const style = { radius: 9, color: '#000', weight: 1.5, fillColor: tierColor(d.tier), fillOpacity: 0.9 };
