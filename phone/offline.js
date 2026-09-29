@@ -163,7 +163,7 @@ async function paintAreas() {
   const total = areas.reduce((s, a) => s + (a.bytes || 0), 0);
   el.innerHTML = areas.map(a => `
     <div class="setup-row"><span class="dot on"></span>
-      <div class="setup-body"><b>${fmtDist(a.km * 1000)} around ${a.lat}, ${a.lon}</b>
+      <div class="setup-body"><b>${a.name ? esc(a.name) + ` (${fmtDist(a.km * 1000)} each side)` : `${fmtDist(a.km * 1000)} around ${a.lat}, ${a.lon}`}</b>
       <div class="mute small1">${new Date(a.ts).toLocaleDateString()} · ${fmtBytes(a.bytes)}${a.terrain ? ' · terrain' : ''}</div></div>
       <button data-goto="${a.id}">View</button></div>`).join('') +
     `<p class="mute">Total ${fmtBytes(total)}.</p>`;

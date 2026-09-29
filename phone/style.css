@@ -255,6 +255,14 @@ body.navigating #speedo { bottom:84px; }
 .chip.late { background:#b3261e; }
 .nv-eta b.late { color:#ff6b61; }
 
+/* ---- trip download ---- */
+.trip-box { border-top:1px solid var(--line); margin-top:12px; padding-top:8px; }
+.trip-box h3 { font-size:15px; margin:6px 0; }
+.tp { position:relative; margin:6px 0; }
+.tp input { width:100%; padding:10px 12px; border-radius:8px; border:1px solid var(--line); background:#0f1115; color:var(--fg); font-size:15px; }
+.tp-res { position:absolute; left:0; right:0; top:100%; z-index:20; background:var(--card); border:1px solid var(--line); border-radius:8px; max-height:240px; overflow:auto; }
+.tp-res[hidden] { display:none; }
+
 /* Night map: invert the light OSM street tiles in 2D, leave markers and satellite alone. */
 body.night .leaflet-tile-pane { filter:invert(1) hue-rotate(180deg) brightness(.85) contrast(.9); }
 body.night.basemap-sat .leaflet-tile-pane { filter:none; }

@@ -64,7 +64,9 @@ function stepText(s) {
   const toward = s.destinations ? ` toward ${s.destinations.split(':').pop().split(',')[0].trim()}` : '';
   switch (m.type) {
     case 'depart': return `Head ${COMPASS8[Math.round((m.bearing_after || 0) / 45) % 8]}${road ? ' on ' + road : ''}`;
-    case 'arrive': return mod === 'left' || mod === 'right' ? `Arrive at your destination on the ${mod}` : 'Arrive at your destination';
+    case 'arrive':
+      if (s._via) return `You've reached your stop${road ? ' on ' + road : ''}, continue on the route`;
+      return mod === 'left' || mod === 'right' ? `Arrive at your destination on the ${mod}` : 'Arrive at your destination';
     case 'turn': case 'end of road':
       if (mod === 'uturn') return `Make a U-turn${onto}`;
       if (mod === 'straight') return `Continue straight${onto}`;
@@ -83,7 +85,7 @@ function stepText(s) {
 }
 function stepArrow(s) {
   const t = s.maneuver.type;
-  if (t === 'arrive') return '🏁';
+  if (t === 'arrive') return s._via ? '📍' : '🏁';
   if (t.includes('roundabout') || t.includes('rotary')) return '⟳';
   return ARROWS[s.maneuver.modifier] || '↑';
 }
@@ -110,7 +112,8 @@ function prepRoute(r) {
   const xy = coords.map(([lon, lat]) => P(lat, lon));
   const cum = [0];
   for (let i = 1; i < xy.length; i++) cum.push(cum[i - 1] + Math.hypot(xy[i][0] - xy[i - 1][0], xy[i][1] - xy[i - 1][1]));
-  const steps = r.legs.flatMap(l => l.steps);
+  // Arrivals at intermediate stops are not the destination.
+  const steps = r.legs.flatMap((l, li) => l.steps.map(s => { if (li < r.legs.length - 1 && s.maneuver.type === 'arrive') s._via = true; return s; }));
   let from = 0;
   for (const s of steps) {
     const [lon, lat] = s.maneuver.location, q = P(lat, lon);
@@ -261,6 +264,7 @@ const ui = {};
     if (!el) return;
     const p = lastResults[Number(el.dataset.i)];
     ui.navResults.hidden = true; ui.navQ.blur();
+    if (p.trip) { ui.navQ.value = ''; navigateSavedTrip(); return; }
     ui.navQ.value = p.name;
     selectPlace(p);
   });
@@ -311,7 +315,12 @@ function paintPlaces() {
 
 let lastResults = [];
 function showSuggestions() {
-  const list = [...opts.places.map(p => ({ ...p, star: true })), ...opts.recent.filter(r => !opts.places.some(p => p.lat === r.lat && p.lon === r.lon))].slice(0, 10);
+  const trip = typeof loadTrip === 'function' ? loadTrip() : null;
+  const list = [
+    ...(trip ? [{ name: trip.name, label: 'Saved trip · directions work offline', trip: true, lat: trip.dest.lat, lon: trip.dest.lon }] : []),
+    ...opts.places.map(p => ({ ...p, star: true })),
+    ...opts.recent.filter(r => !opts.places.some(p => p.lat === r.lat && p.lon === r.lon)),
+  ].slice(0, 10);
   if (!list.length) { ui.navResults.hidden = true; return; }
   renderResults(list);
 }
@@ -319,7 +328,7 @@ function renderResults(list) {
   lastResults = list;
   const here = fix || null;
   ui.navResults.innerHTML = list.map((p, i) => `
-    <div class="nr" data-i="${i}"><span class="nr-ico">${p.star ? '★' : p.recent ? '🕘' : '📍'}</span>
+    <div class="nr" data-i="${i}"><span class="nr-ico">${p.trip ? '🧳' : p.star ? '★' : p.recent ? '🕘' : '📍'}</span>
       <div class="nr-body"><b>${esc(p.name)}</b><div class="mute small1">${esc(p.label || '')}</div></div>
       ${here ? `<span class="nr-d mute">${fmtDist(distM(here, p))}</span>` : ''}</div>`).join('') || '<div class="nr mute">No results</div>';
   ui.navResults.hidden = false;
