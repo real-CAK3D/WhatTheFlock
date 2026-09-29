@@ -83,6 +83,8 @@ async function init3D() {
   map3dReady = true;
   applyTerrain();
   if (typeof applyBasemap3D === 'function') applyBasemap3D();
+  if (typeof navOn3DReady === 'function') navOn3DReady();
+  map3d.on('contextmenu', e => { if (typeof dropPin === 'function') dropPin(e.lngLat.lat, e.lngLat.lng); });
 }
 
 const EMPTY = { type: 'FeatureCollection', features: [] };
