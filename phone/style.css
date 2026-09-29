@@ -8,11 +8,14 @@ html, body { margin:0; height:100%; background:var(--bg); color:var(--fg); font:
 body { display:flex; flex-direction:column; }
 
 header {
-  display:flex; align-items:center; gap:10px; padding:8px 12px;
+  display:flex; align-items:center; gap:8px; padding:8px 10px;
   padding-top:max(8px, env(safe-area-inset-top));
-  background:var(--card); border-bottom:1px solid var(--line); flex-wrap:wrap;
+  background:var(--card); border-bottom:1px solid var(--line);
 }
-.stat { display:flex; align-items:center; gap:5px; font-size:13px; }
+.stat { display:flex; align-items:center; gap:4px; font-size:12px; white-space:nowrap; }
+header .primary { padding:8px 12px; }
+@media (max-width:400px) { #netStat .lbl { display:none; } }
+a { color:var(--accent); }
 .stat .lbl { color:var(--mute); }
 .stat .val { font-weight:600; }
 .dot { width:9px; height:9px; border-radius:50%; background:var(--bad); }
@@ -74,7 +77,7 @@ nav button.active { color:var(--accent); font-weight:600; }
 .mute { color:var(--mute); }
 .small { font-size:12px; margin:12px; }
 .sw { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:8px 0; }
-.sw input[type=checkbox] { width:22px; height:22px; }
+.sw input[type=checkbox] { width:22px; height:22px; order:2; flex:none; margin:0 0 0 auto; }
 .beep { display:flex; align-items:center; gap:10px; padding:6px 0; }
 .beep input { width:22px; height:22px; }
 
@@ -110,6 +113,54 @@ nav button.active { color:var(--accent); font-weight:600; }
   font-size:12px; color:var(--mute); white-space:nowrap;
 }
 #lyrStatus:empty { display:none; }
+
+.ok { color:var(--ok); } .warn { color:var(--warn); }
+.small1 { font-size:12px; margin-top:2px; }
+.inline { display:flex; align-items:center; gap:6px; font-size:13px; }
+.inline input { width:18px; height:18px; margin:0; }
+#netStat .lbl { color:var(--mute); }
+
+#setupBanner {
+  display:flex; align-items:center; gap:10px; padding:8px 12px; font-size:13px;
+  background:#3a2f12; color:#ffd479; border-bottom:1px solid var(--line);
+}
+#setupBanner[hidden] { display:none; }
+#setupBanner button { margin-left:auto; padding:6px 12px; }
+.setup-row { display:flex; align-items:flex-start; gap:10px; padding:9px 0; border-bottom:1px solid var(--line); }
+.setup-row:last-child { border-bottom:0; }
+.setup-row .dot { margin-top:6px; flex:none; }
+.setup-row .dot.on { background:var(--ok); }
+.setup-body { flex:1; min-width:0; }
+.setup-row button { flex:none; }
+
+.trip { display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; padding:10px 12px; border-bottom:1px solid var(--line); }
+.trip div { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:6px 8px; text-align:center; }
+.trip b { display:block; font-size:17px; }
+.trip span { color:var(--mute); font-size:11px; }
+
+.dev.ignored { opacity:.45; }
+.acts { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+.acts button { padding:6px 10px; font-size:13px; }
+.acts button.sel { background:var(--accent); color:#000; border-color:var(--accent); }
+
+.snd-grid { display:grid; grid-template-columns:1fr auto auto; gap:6px 8px; align-items:center; margin:8px 0; font-size:14px; }
+.snd-grid select { padding:8px; }
+.snd-grid button { padding:8px 12px; }
+
+.fab.mute { bottom:136px; font-size:18px; }
+
+#finder { position:fixed; inset:0; z-index:1100; background:rgba(0,0,0,.6); display:flex; align-items:flex-end; }
+#finder[hidden] { display:none; }
+.finder-box { background:var(--card); border-top:1px solid var(--line); border-radius:14px 14px 0 0; padding:16px; width:100%;
+  padding-bottom:max(16px, env(safe-area-inset-bottom)); }
+.finder-top { display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; }
+#finderRssi { font-size:44px; font-weight:800; margin:6px 0; }
+.finder-bar { height:14px; background:#262b36; border-radius:7px; overflow:hidden; margin:6px 0; }
+.finder-bar > div { height:100%; width:0; background:var(--accent); transition:width .3s; }
+
+/* Night map: invert the light OSM street tiles in 2D, leave markers and satellite alone. */
+body.night .leaflet-tile-pane { filter:invert(1) hue-rotate(180deg) brightness(.85) contrast(.9); }
+body.night.basemap-sat .leaflet-tile-pane { filter:none; }
 
 .leaflet-popup-content { font-size:13px; }
 .leaflet-popup-content code { font-size:12px; }

@@ -166,7 +166,7 @@ function popupFor(p) {
   const t = p.tags;
   const rows = Object.entries(t).map(([k, v]) => `<tr><td style="color:#888;padding-right:6px">${esc(k)}</td><td>${esc(v)}</td></tr>`).join('');
   const osmType = { n: 'node', w: 'way', r: 'relation' }[p.id[0]];
-  const dist = fix ? ` · ${Math.round(distM(fix, p))} m away` : '';
+  const dist = fix ? ` · ${fmtDist(distM(fix, p))} away` : '';
   return `<b>${esc(KINDS[p.kind].label)}</b>${dist}<br>
     ${p.dirs.length ? 'Facing ' + p.dirs.map(d => d + '°').join(', ') + '<br>' : ''}
     <table style="font-size:12px;margin-top:4px">${rows}</table>
@@ -288,18 +288,45 @@ async function saveArea(km) {
 
 // ---------------------------------------------------------------- proximity alerts
 
-const alerted = new Set();
+const alerted = new Map();   // id -> time alerted
+const REALERT_MS = 30 * 60e3;  // same camera can alert again after 30 min (next pass)
+opts.alertAheadOnly = opts.alertAheadOnly ?? true;
+
+function bearingDeg(a, b) {
+  const r = Math.PI / 180;
+  const y = Math.sin((b.lon - a.lon) * r) * Math.cos(b.lat * r);
+  const x = Math.cos(a.lat * r) * Math.sin(b.lat * r) - Math.sin(a.lat * r) * Math.cos(b.lat * r) * Math.cos((b.lon - a.lon) * r);
+  return (Math.atan2(y, x) / r + 360) % 360;
+}
+const angDiff = (a, b) => Math.abs(((a - b + 540) % 360) - 180);
+
 function layersOnFix(f) {
   if (!opts.alertMapped || !f || f.acc > 100) return;
+  // When moving with a heading, skip cameras already behind or beside us.
+  const moving = f.spd != null && f.spd > 3 && f.hdg != null && !Number.isNaN(f.hdg);
+  const now = Date.now();
   for (const p of allItems()) {
-    if (!KINDS[p.kind].alert || !opts.layers[p.kind] || alerted.has(p.id)) continue;
+    if (!KINDS[p.kind].alert || !opts.layers[p.kind]) continue;
+    const t = alerted.get(p.id);
+    if (t && now - t < REALERT_MS) continue;
     const d = distM(f, p);
     if (d > opts.alertDist) continue;
-    alerted.add(p.id);
+    if (opts.alertAheadOnly && moving && angDiff(bearingDeg(f, p), f.hdg) > 70) continue;
+    alerted.set(p.id, now);
+    trip.mappedPassed++;
     const what = p.kind === 'alpr' ? 'Plate reader' : (p.tags.enforcement === 'traffic_signals' ? 'Red-light camera' : 'Speed camera');
-    toast(`${what} ahead · ${Math.round(d)} m${p.tags.manufacturer ? ' · ' + p.tags.manufacturer : ''}`, true);
-    if (opts.vibe && navigator.vibrate) navigator.vibrate([150, 80, 150]);
+    const extra = p.tags.manufacturer || p.tags.brand || p.tags.operator || '';
+    const msg = `${what} ahead · ${fmtDist(d)}${extra ? ' · ' + extra : ''}`;
+    if (typeof onMappedAlert === 'function') onMappedAlert(p, what, d, msg);
+    else toast(msg, true);
   }
+}
+
+// Alert-distance dropdown labels follow the chosen units.
+function refreshDistLabels() {
+  const sel = $('optAlertDist');
+  if (!sel) return;
+  for (const o of sel.options) o.textContent = fmtDist(Number(o.value));
 }
 
 // ---------------------------------------------------------------- UI
@@ -334,16 +361,19 @@ function buildPanel() {
     <h2>Mapped cameras</h2>
     <p class="mute">From OpenStreetMap, including DeFlock's crowd-sourced plate-reader reports. Loads as you move; save an area ahead of a trip to have it offline.</p>
     <label class="sw"><input type="checkbox" id="optAlertMapped"> Alert near plate readers &amp; speed/red-light cameras</label>
+    <label class="sw"><input type="checkbox" id="optAlertAhead"> Only alert for cameras ahead of me while driving</label>
     <label class="sw">Alert distance
-      <select id="optAlertDist"><option value="150">150 m</option><option value="250">250 m</option><option value="400">400 m</option><option value="800">800 m</option></select>
+      <select id="optAlertDist"><option value="150"></option><option value="250"></option><option value="400"></option><option value="800"></option><option value="1600"></option></select>
     </label>
     <button data-area="10">Save 10 km around me</button>
     <button data-area="30">Save 30 km around me</button>
     <button data-area="60">Save 60 km around me</button>
     <p class="mute" id="lyrInfo"></p>
     <button id="bClearPoi">Clear saved map cameras</button>`;
-  $('tab-set').insertBefore(card, $('tab-set').children[2]);
+  $('slot-mapped').append(card);
   bindOpt('optAlertMapped', 'alertMapped');
+  bindOpt('optAlertAhead', 'alertAheadOnly');
+  refreshDistLabels();
   bindOpt('optAlertDist', 'alertDist');
   card.querySelectorAll('[data-area]').forEach(b => b.onclick = () => saveArea(Number(b.dataset.area)));
   $('bClearPoi').onclick = async () => {

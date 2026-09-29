@@ -30,11 +30,21 @@ const ago = ts => {
   return Math.round(s / 86400) + 'd ago';
 };
 const tierColor = t => getComputedStyle(document.documentElement).getPropertyValue('--t' + (t ?? 0)).trim();
+// Distances are stored in metres; shown in feet/miles unless the user picks metric.
+function fmtDist(m) {
+  if (m == null || Number.isNaN(m)) return '—';
+  if (opts.units === 'metric') return m < 1000 ? Math.round(m) + ' m' : (m / 1000).toFixed(m < 10000 ? 1 : 0) + ' km';
+  const ft = m * 3.28084;
+  return ft < 1000 ? Math.round(ft / 10) * 10 + ' ft' : (m / 1609.34).toFixed(m < 16093 ? 1 : 0) + ' mi';
+}
 
 // ---------------------------------------------------------------- storage
 
 let data = { devices: {}, hits: [], track: [] };
-let opts = { wake: true, vibe: true, track: true, minTier: 0, sort: 'last', follow: true };
+let opts = { wake: true, vibe: true, track: true, minTier: 0, sort: 'last', follow: true,
+  units: 'imperial', showIgnored: false, night: false, autoPull: false, shareExports: false };
+// This app session (since the page opened) for the trip card.
+const trip = { start: Date.now(), dist: 0, newCams: 0, hits: 0, mappedPassed: 0, lastPt: null };
 
 function load() {
   try { const d = JSON.parse(localStorage.getItem(STORE_KEY)); if (d && d.devices) data = { devices: {}, hits: [], track: [], ...d }; } catch {}
@@ -129,6 +139,10 @@ function distM(a, b) {
 }
 
 function onFix() {
+  if (fix.acc <= 50) {
+    if (trip.lastPt) { const d = distM(trip.lastPt, fix); if (d >= 10) { trip.dist += d; trip.lastPt = fix; } }
+    else trip.lastPt = fix;
+  }
   if (opts.track && fix.acc <= 50) {
     const last = data.track[data.track.length - 1];
     if (!last || distM(last, fix) >= 15) {
@@ -204,11 +218,14 @@ function ingestDetection(ev, source = 'live') {
   }
 
   save();
+  if (source === 'live') { trip.hits++; if (isNew) trip.newCams++; }
+  if (source === 'live' && typeof findOnHit === 'function') findOnHit(mac, rssi);
   if (tier >= opts.minTier) {
     updateMarker(d);
-    if (isNew && source === 'live') {
-      toast(`New camera · tier ${tier} · ${mac}`, tier >= 3);
-      if (opts.vibe && navigator.vibrate) navigator.vibrate(tier >= 3 ? [300, 100, 300, 100, 300] : [200]);
+    if (source === 'live' && d.status !== 'false') {
+      // sounds.js owns alert sound/voice/vibration/notification; fall back to a toast.
+      if (typeof onDetectionAlert === 'function') onDetectionAlert(d, isNew, tier, rssi);
+      else if (isNew) toast(`New camera · tier ${tier} · ${mac}`, tier >= 3);
     }
   }
   updateCounts();
@@ -217,7 +234,26 @@ function ingestDetection(ev, source = 'live') {
 }
 
 function visibleDevices() {
-  return Object.values(data.devices).filter(d => d.tier >= opts.minTier);
+  return Object.values(data.devices).filter(d => d.tier >= opts.minTier && (opts.showIgnored || d.status !== 'false'));
+}
+
+// Nearest crowd-mapped plate reader (DeFlock/OSM, from layers.js) to a detection.
+const DEFLOCK_MATCH_M = 150;
+function nearestMapped(d) {
+  if (!d.bestLoc || typeof allItems !== 'function') return null;
+  let best = null;
+  for (const p of allItems()) {
+    if (p.kind !== 'alpr') continue;
+    const m = distM(d.bestLoc, p);
+    if (!best || m < best.m) best = { m, p };
+  }
+  return best;
+}
+function mappedBadge(d) {
+  const n = nearestMapped(d);
+  if (!d.bestLoc) return '';
+  if (n && n.m <= DEFLOCK_MATCH_M) return `<span class="ok">On DeFlock map (${fmtDist(n.m)})</span>`;
+  return `<span class="warn">Not on DeFlock map</span> · <a href="https://deflock.me" target="_blank" rel="noopener">report</a>`;
 }
 
 // ---------------------------------------------------------------- map
@@ -246,7 +282,10 @@ function popupHtml(d) {
     <code>${esc(d.mac)}</code><br>
     ${d.ssid ? 'SSID: ' + esc(d.ssid) + '<br>' : ''}${d.name ? 'Name: ' + esc(d.name) + '<br>' : ''}
     Best signal ${d.bestRssi} dBm · ${d.hits} hits<br>
-    Last seen ${esc(ago(d.last))}<br>
+    Last seen ${esc(ago(d.last))}${fix && d.bestLoc ? ' · ' + fmtDist(distM(fix, d.bestLoc)) + ' away' : ''}<br>
+    ${d.status === 'confirmed' ? '<b class="ok">✓ Seen in person</b><br>' : d.status === 'false' ? '<b class="warn">Marked false positive</b><br>' : ''}
+    ${d.note ? '📝 ' + esc(d.note) + '<br>' : ''}
+    ${mappedBadge(d)}<br>
     <span style="color:#888">${m}</span>`;
 }
 
@@ -290,28 +329,63 @@ function renderList() {
     s === 'tier' ? (b.tier - a.tier) || (b.last - a.last) :
     s === 'rssi' ? b.bestRssi - a.bestRssi :
     s === 'hits' ? b.hits - a.hits : b.last - a.last);
+  renderTrip();
   if (!devs.length) { $('devList').innerHTML = '<p class="mute" style="padding:16px">No cameras yet.</p>'; return; }
-  $('devList').innerHTML = devs.map(d => `
-    <div class="dev">
+  $('devList').innerHTML = devs.map(d => {
+    const mac = esc(d.mac);
+    return `
+    <div class="dev${d.status === 'false' ? ' ignored' : ''}">
       <div class="tier t${d.tier}">${d.tier}</div>
       <div class="body">
-        <div class="mac">${esc(d.mac)}</div>
-        <div class="meta">${esc(TIER_NAMES[d.tier] || d.method)} · ${d.bestRssi} dBm · ${d.hits} hits · ${esc(ago(d.last))}${d.source !== 'live' ? ' · from board' : ''}</div>
+        <div class="mac">${mac}${d.status === 'confirmed' ? ' <span class="ok">✓</span>' : ''}</div>
+        <div class="meta">${esc(TIER_NAMES[d.tier] || d.method)} · ${d.bestRssi} dBm · ${d.hits} hits · ${esc(ago(d.last))}${d.source !== 'live' ? ' · from board' : ''}${fix && d.bestLoc ? ' · ' + fmtDist(distM(fix, d.bestLoc)) : ''}</div>
         ${d.ssid || d.name ? `<div class="meta">${esc(d.ssid || d.name)}</div>` : ''}
+        ${d.note ? `<div class="meta">📝 ${esc(d.note)}</div>` : ''}
         <div class="methods">${Object.entries(d.methods).map(([k, v]) => `${esc(k)} ×${v}`).join(' · ')}</div>
+        <div class="methods">${mappedBadge(d)}</div>
+        <div class="acts">
+          ${d.bestLoc ? `<button data-act="map" data-mac="${mac}">Map</button>` : ''}
+          <button data-act="find" data-mac="${mac}">Find</button>
+          <button data-act="ok" data-mac="${mac}" class="${d.status === 'confirmed' ? 'sel' : ''}">✓ Seen</button>
+          <button data-act="false" data-mac="${mac}" class="${d.status === 'false' ? 'sel' : ''}">✗ False +</button>
+          <button data-act="note" data-mac="${mac}">Note</button>
+        </div>
       </div>
-      ${d.bestLoc ? `<button class="go" data-mac="${esc(d.mac)}">Map</button>` : ''}
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 $('devList').addEventListener('click', e => {
-  const mac = e.target.dataset && e.target.dataset.mac;
-  if (!mac) return;
+  const { act, mac } = e.target.dataset || {};
+  if (!act || !mac) return;
   const d = data.devices[mac];
-  showTab('map');
-  setFollow(false);
-  map.setView([d.bestLoc.lat, d.bestLoc.lon], 18);
-  markers[mac] && markers[mac].openPopup();
+  if (act === 'map') {
+    showTab('map');
+    setFollow(false);
+    if (typeof map3dActive === 'function' && map3dActive()) map3d.flyTo({ center: [d.bestLoc.lon, d.bestLoc.lat], zoom: 17.5 });
+    else { map.setView([d.bestLoc.lat, d.bestLoc.lon], 18); markers[mac] && markers[mac].openPopup(); }
+  } else if (act === 'find') {
+    if (typeof openFinder === 'function') openFinder(mac);
+  } else if (act === 'ok' || act === 'false') {
+    const s = act === 'ok' ? 'confirmed' : 'false';
+    d.status = d.status === s ? '' : s;
+    save(); redrawMarkers(); updateCounts(); renderList();
+  } else if (act === 'note') {
+    const n = prompt('Note for ' + mac, d.note || '');
+    if (n !== null) { d.note = n.trim(); save(); renderList(); }
+  }
 });
+
+function renderTrip() {
+  const mins = Math.round((Date.now() - trip.start) / 60000);
+  const all = Object.values(data.devices);
+  $('trip').innerHTML = `
+    <div><b>${fmtDist(trip.dist)}</b><span>driven</span></div>
+    <div><b>${trip.newCams}</b><span>new cams</span></div>
+    <div><b>${trip.hits}</b><span>hits</span></div>
+    <div><b>${mins < 60 ? mins + 'm' : (mins / 60).toFixed(1) + 'h'}</b><span>session</span></div>
+    <div><b>${all.length}</b><span>all-time</span></div>
+    <div><b>${all.filter(d => d.tier >= 3).length}</b><span>tier 3–4</span></div>`;
+}
 
 // ---------------------------------------------------------------- beep config
 
@@ -366,7 +440,10 @@ async function openDevice(d) {
     log('[usb] connected');
     requestWake();
     readLoop();
+    if (typeof playEvent === 'function') playEvent('usb');
     setTimeout(() => send({ cmd: 'get_config' }), 300);
+    // The board keeps what it found while unplugged; pull it in without a tap.
+    if (opts.autoPull) setTimeout(() => send({ cmd: 'dump_session', source: 'prev' }), 1200);
   } catch (e) {
     log('[usb] open failed: ' + e.message);
     toast('USB: ' + e.message);
@@ -390,6 +467,7 @@ async function readLoop() {
 
 function closed() {
   reading = false;
+  if (dev && typeof playEvent === 'function') playEvent('usb');
   if (dev) { try { dev.close(); } catch {} }
   dev = null;
   setStat('usbStat', 'off', 'off');
@@ -483,7 +561,15 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 
 // ---------------------------------------------------------------- export / import
 
-function download(name, mime, text) {
+async function download(name, mime, text) {
+  // Optional: hand the file to Android's share sheet (Drive, email, Messages…).
+  if (opts.shareExports && navigator.canShare) {
+    const file = new File([text], name, { type: mime });
+    if (navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file], title: name }); return; }
+      catch (e) { if (e.name === 'AbortError') return; }
+    }
+  }
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([text], { type: mime }));
   a.download = name;
@@ -519,7 +605,7 @@ function exportKml() {
     `<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>Flock You</name>${styles}${pms}${route}</Document></kml>`);
 }
 function exportJson() {
-  download(`flockyou-backup-${stamp()}.json`, 'application/json', JSON.stringify({ app: 'flockyou-mobile', v: 1, ...data }));
+  download(`flockyou-backup-${stamp()}.json`, 'application/json', JSON.stringify({ app: 'flockyou-mobile', v: 1, opts, ...data }));
 }
 document.querySelectorAll('[data-exp]').forEach(b => b.onclick = () =>
   ({ csv: exportCsv, hits: exportHits, kml: exportKml, json: exportJson })[b.dataset.exp]());
@@ -532,7 +618,8 @@ $('importFile').onchange = async e => {
     if (!d.devices) throw new Error('not a Flock You backup');
     // Merge: keep whichever copy of each device saw more hits.
     for (const [mac, dv] of Object.entries(d.devices)) {
-      if (!data.devices[mac] || dv.hits > data.devices[mac].hits) data.devices[mac] = dv;
+      const cur = data.devices[mac];
+      if (!cur || dv.hits > cur.hits) data.devices[mac] = { ...dv, note: dv.note || cur?.note || '', status: dv.status || cur?.status || '' };
     }
     data.hits = [...data.hits, ...(d.hits || [])].sort((a, b) => a.ts - b.ts).slice(-MAX_HITS);
     data.track = [...data.track, ...(d.track || [])].sort((a, b) => a.ts - b.ts).slice(-MAX_TRACK);
@@ -584,6 +671,13 @@ bindOpt('optWake', 'wake', () => opts.wake && dev ? requestWake() : releaseWake(
 bindOpt('optVibe', 'vibe');
 bindOpt('optTrack', 'track');
 bindOpt('optMinTier', 'minTier', () => { redrawMarkers(); updateCounts(); renderList(); });
+bindOpt('optShowIgnored', 'showIgnored', () => { redrawMarkers(); updateCounts(); renderList(); });
+bindOpt('optAutoPull', 'autoPull');
+bindOpt('optShare', 'shareExports');
+bindOpt('optNight', 'night', () => document.body.classList.toggle('night', opts.night));
+$('optUnits').value = opts.units;
+$('optUnits').onchange = e => { opts.units = e.target.value; saveOpts(); renderList(); if (typeof refreshDistLabels === 'function') refreshDistLabels(); };
+document.body.classList.toggle('night', opts.night);
 $('sortBy').value = opts.sort;
 $('bFollow').classList.toggle('on', opts.follow);
 initMap();

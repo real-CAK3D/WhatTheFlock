@@ -211,7 +211,7 @@ async function set3D(on) {
     <p class="mute">Tap <b>3D</b> on the map. Two-finger drag up/down to tilt, twist to rotate. While following, the map turns to face your direction of travel.</p>
     <label class="sw"><input type="checkbox" id="optTerrain"> Show terrain (hills &amp; elevation)</label>
     <p class="mute small0">3D map © OpenFreeMap, OpenMapTiles, OpenStreetMap contributors. Terrain: AWS Terrain Tiles (Mapzen).</p>`;
-  $('tab-set').insertBefore(card, $('tab-set').children[3]);
+  $('slot-3d').append(card);
   bindOpt('optTerrain', 'terrain', applyTerrain);
 
   if (opts.view3d) { opts.view3d = false; set3D(true); }

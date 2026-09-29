@@ -28,6 +28,7 @@ function applyBasemap2D() {
   sat2D.forEach(l => l.remove());
   sat2D = [];
   const b = BASEMAPS[opts.basemap];
+  document.body.classList.toggle('basemap-sat', !!b.tiles);   // night-mode filter only applies to the street map
   if (!b.tiles) { if (!map.hasLayer(baseLayer)) baseLayer.addTo(map); return; }
   baseLayer.remove();
   // maxNativeZoom lets Leaflet stretch the last real zoom level instead of showing blanks.
