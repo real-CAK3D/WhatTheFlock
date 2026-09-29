@@ -1,12 +1,13 @@
 // Offline support: app shell is cached on install; map tiles are cached as
 // you view them so areas you've driven through still render without signal.
-const SHELL = 'fy-shell-v3';
+const SHELL = 'fy-shell-v4';
 const TILES = 'fy-tiles-v1';
 const MAX_TILES = 8000;
-const FILES = ['./', 'index.html', 'app.js', 'layers.js', 'map3d.js', 'style.css', 'manifest.webmanifest', 'icon.svg',
+const FILES = ['./', 'index.html', 'app.js', 'layers.js', 'map3d.js', 'basemap.js', 'style.css', 'manifest.webmanifest', 'icon.svg',
   'vendor/leaflet.js', 'vendor/leaflet.css', 'vendor/maplibre-gl.js', 'vendor/maplibre-gl.css'];
 // Tile hosts: imagery/vector/elevation tiles never change, so serve from cache first.
-const TILE_HOSTS = ['tile.openstreetmap.org', 'tiles.openfreemap.org', 's3.amazonaws.com'];
+const TILE_HOSTS = ['tile.openstreetmap.org', 'tiles.openfreemap.org', 's3.amazonaws.com',
+  'server.arcgisonline.com', 'basemap.nationalmap.gov'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(SHELL).then(c => c.addAll(FILES)).then(() => self.skipWaiting()));

@@ -82,6 +82,7 @@ async function init3D() {
   addLayers3D();
   map3dReady = true;
   applyTerrain();
+  if (typeof applyBasemap3D === 'function') applyBasemap3D();
 }
 
 const EMPTY = { type: 'FeatureCollection', features: [] };

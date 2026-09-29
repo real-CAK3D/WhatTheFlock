@@ -222,13 +222,13 @@ function visibleDevices() {
 
 // ---------------------------------------------------------------- map
 
-let map = null, meMarker = null, meAcc = null, routeLine = null;
+let map = null, meMarker = null, meAcc = null, routeLine = null, baseLayer = null;
 const markers = {};
 
 function initMap() {
   map = L.map('map', { zoomControl: false, attributionControl: true }).setView([39.5, -98.35], 4);
-  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19, attribution: '© OpenStreetMap',
+  baseLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19, zIndex: 1, attribution: '© OpenStreetMap',
   }).addTo(map);
   L.control.zoom({ position: 'topright' }).addTo(map);
   routeLine = L.polyline(data.track.map(p => [p.lat, p.lon]), { color: '#58a6ff', weight: 3, opacity: 0.6 }).addTo(map);
