@@ -83,6 +83,47 @@ function stepText(s) {
     default: return `Continue${onto}`;
   }
 }
+// Lane guidance from OSRM: lanes approaching the maneuver, each with its
+// arrows and whether it's a lane for this route ("valid").
+const LANE_ARROWS = { left: '←', 'slight left': '↖', 'sharp left': '↙', straight: '↑', 'slight right': '↗', right: '→', 'sharp right': '↘', uturn: '↶', none: '↑' };
+const NUM_WORDS = ['', 'one', 'two', 'three', 'four'];
+// OSRM puts lanes on the maneuver's own intersection for junction turns, but
+// for exits/forks they sit on the previous step's intersections leading up to
+// it — use the last of those within ~1 km of the maneuver.
+function laneInfo(step, prev) {
+  const type = step?.maneuver?.type;
+  // Lane advice for arrivals, departures and merges was misleading in testing.
+  if (!type || ['arrive', 'depart', 'merge'].includes(type)) return null;
+  let lanes = step.intersections?.[0]?.lanes;
+  // Only exits/ramps/forks borrow the approach lanes, and only close by —
+  // further back they often belong to a different junction.
+  if ((!lanes || lanes.length < 2) && prev?.intersections && ['on ramp', 'off ramp', 'fork'].includes(type)) {
+    const m = step.maneuver.location;
+    for (let j = prev.intersections.length - 1; j >= 0; j--) {
+      const x = prev.intersections[j];
+      if (distM({ lat: x.location[1], lon: x.location[0] }, { lat: m[1], lon: m[0] }) > 400) break;
+      if (x.lanes?.length >= 2) { lanes = x.lanes; break; }
+    }
+  }
+  if (!lanes || lanes.length < 2) return null;
+  const valid = lanes.map((l, i) => l.valid ? i : -1).filter(i => i >= 0);
+  if (!valid.length || valid.length === lanes.length) return { lanes, text: '' };
+  // Speak it when the good lanes sit together at one edge (the common case).
+  let text = '';
+  const n = valid.length, contiguous = valid[n - 1] - valid[0] === n - 1;
+  if (contiguous && valid[0] === 0) text = n === 1 ? 'use the left lane' : `use the left ${NUM_WORDS[n] || n} lanes`;
+  else if (contiguous && valid[n - 1] === lanes.length - 1) text = n === 1 ? 'use the right lane' : `use the right ${NUM_WORDS[n] || n} lanes`;
+  else if (n === 1) text = `use lane ${valid[0] + 1} from the left`;
+  return { lanes, text };
+}
+function laneHtml(li) {
+  if (!li) return '';
+  return li.lanes.map(l => {
+    const arrows = (l.indications || ['none']).slice(0, 2).map(x => LANE_ARROWS[x] || '↑').join('');
+    return `<span class="lane${l.valid ? ' ok' : ''}">${arrows}</span>`;
+  }).join('');
+}
+
 function stepArrow(s) {
   const t = s.maneuver.type;
   if (t === 'arrive') return s._via ? '📍' : '🏁';
@@ -237,7 +278,7 @@ const ui = {};
     <div id="navSheet" hidden></div>
     <div id="navBanner" hidden>
       <div class="nb-arrow" id="nbArrow">↑</div>
-      <div class="nb-main"><div class="nb-dist" id="nbDist"></div><div class="nb-text" id="nbText"></div></div>
+      <div class="nb-main"><div class="nb-dist" id="nbDist"></div><div class="nb-text" id="nbText"></div><div class="nb-lanes" id="nbLanes" hidden></div></div>
       <div class="nb-then" id="nbThen" hidden></div>
     </div>
     <div id="navBar" hidden>
@@ -410,6 +451,10 @@ async function planRoute(silent = false) {
     // Show the routes straight away; camera counts fill in once the corridor's
     // camera data is loaded (from cache, or Overpass when online).
     if (!silent) showPreview();
+    // Weather along each option (weather.js): started now, filled in when it arrives.
+    if (!silent && opts.weather && typeof routeWeather === 'function') Promise.all(mine.map(r => routeWeather(r).catch(() => {}))).then(() => {
+      if (routes === mine && !nav && !ui.navSheet.hidden && $('nsRoutes')) showPreview();
+    });
     let capped = false;
     for (const [i, r] of routes.entries()) { const c = await loadRouteCells(r); if (i === 0) capped = c; }
     // Toll points come from their own small query; they fill in when ready.
@@ -447,6 +492,7 @@ function showPreview() {
           ${typeof routeDelayAhead === 'function' && routeDelayAhead(r) >= 60 ? `<span class="chip late">+${fmtDur(routeDelayAhead(r))} traffic</span>` : ''}
           ${r.isFastest ? '<span class="chip">Fastest</span>' : ''}${r.isFewest ? '<span class="chip ok">Fewest cameras</span>' : ''}${r.isCurviest ? '<span class="chip curvy">Curviest</span>' : ''}</div>
         ${r.cornerCount != null ? `<div class="small1 mute">🌀 ${r.cornerCount} corners</div>` : ''}
+        ${r.weather && typeof wxSummary === 'function' ? `<div class="small1">${wxSummary(r)}</div>` : ''}
         <div class="small1">${camSummary(r)}${r.tolls ? ` · <span class="warn">💰 ${r.tolls} toll point${r.tolls === 1 ? '' : 's'}</span>` : r.tolls === 0 ? ' · no tolls' : ''}${r.capped ? ' <span class="mute">(first part of route)</span>' : ''}</div>
       </div>`).join('')}</div>
     <div class="ns-acts"><button id="nsStart" class="primary">Start</button>${typeof demoStart === 'function' ? '<button id="nsDemo">Demo</button>' : ''}<button id="nsBack">Back</button></div>`;
@@ -643,7 +689,10 @@ async function navOnFix(f) {
       const next = rt.steps[k + 1];
       const lc = s => s[0].toLowerCase() + s.slice(1);   // keep street names capitalised
       const soon = next && next._at - step._at < 150 && next.maneuver.type !== 'arrive' ? `, then ${lc(stepText(next))}` : '';
-      say(th === thresholds().at(-1) ? stepText(step) + soon : `In ${fmtDist(dist)}, ${lc(stepText(step))}`);
+      const lanes = laneInfo(step, rt.steps[k - 1])?.text;
+      say(th === thresholds().at(-1)
+        ? stepText(step) + soon
+        : `In ${fmtDist(dist)}, ${lc(stepText(step))}${lanes ? `, ${lanes}` : ''}`);
       break;
     }
   }
@@ -658,6 +707,10 @@ function paintBanner(step, dist, next) {
   ui.nbArrow.textContent = stepArrow(step);
   ui.nbDist.textContent = fmtDist(dist);
   ui.nbText.textContent = stepText(step);
+  // Lane arrows once the maneuver is within ~1.5 km.
+  const li = dist < 1500 ? laneInfo(step, rt.steps[rt.steps.indexOf(step) - 1]) : null;
+  $('nbLanes').innerHTML = laneHtml(li);
+  $('nbLanes').hidden = !li;
   const thenClose = next && next._at - step._at < 250 && next.maneuver.type !== 'arrive';
   ui.nbThen.hidden = !thenClose;
   if (thenClose) ui.nbThen.textContent = 'Then ' + stepArrow(next);

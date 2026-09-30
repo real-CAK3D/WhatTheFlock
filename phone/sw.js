@@ -4,11 +4,11 @@
 //    (offline.js) and is never trimmed; 'fy-tiles' is a rolling cache of
 //    whatever you've viewed.
 //  - OpenFreeMap style/TileJSON: network first with a short timeout, cached copy offline.
-const SHELL = 'fy-shell-v14';
+const SHELL = 'fy-shell-v15';
 const TILES = 'fy-tiles-v1';
 const OFFLINE = 'fy-offline';
 const MAX_TILES = 8000;
-const FILES = ['./', 'index.html', 'app.js', 'layers.js', 'map3d.js', 'basemap.js', 'sounds.js', 'extras.js', 'offline.js', 'nav.js', 'speed.js', 'traffic.js', 'trip.js', 'pois.js', 'sd.js', 'codriver.js', 'drives.js', 'hud.js', 'announce.js',
+const FILES = ['./', 'index.html', 'app.js', 'layers.js', 'map3d.js', 'basemap.js', 'sounds.js', 'extras.js', 'offline.js', 'nav.js', 'speed.js', 'traffic.js', 'trip.js', 'pois.js', 'sd.js', 'codriver.js', 'drives.js', 'hud.js', 'announce.js', 'weather.js', 'hazards.js', 'quick.js', 'settings.js',
   'style.css', 'manifest.webmanifest', 'icon.svg',
   'vendor/leaflet.js', 'vendor/leaflet.css', 'vendor/maplibre-gl.js', 'vendor/maplibre-gl.css'];
 const TILE_HOSTS = ['tile.openstreetmap.org', 'tiles.openfreemap.org', 's3.amazonaws.com',
@@ -58,6 +58,8 @@ async function tileFetch(req, url) {
 self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET') return;
+  // Live shared reports: always from the network, never cached.
+  if (url.origin === self.location.origin && url.pathname.startsWith('/reports')) return;
 
   // Style and TileJSON (no file extension) point at the current tile build.
   if (url.hostname === 'tiles.openfreemap.org' && !/\.(pbf|png|webp|json)$/.test(url.pathname)) {

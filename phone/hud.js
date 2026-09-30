@@ -84,7 +84,8 @@ function paintHud() {
     const st = nav.rt.steps[nav.stepIdx];
     const d = Math.max(0, st._at - nav.along);
     const road = st.name || st.ref || '';
-    turn.innerHTML = `<b>${stepArrow(st)}</b><span>${fmtDist(d)}</span><em>${esc(road || stepText(st))}</em>`;
+    const li = d < 1500 && typeof laneInfo === 'function' ? laneInfo(st, nav.rt.steps[nav.stepIdx - 1]) : null;
+    turn.innerHTML = `<b>${stepArrow(st)}</b><span>${fmtDist(d)}</span><em>${esc(road || stepText(st))}</em>${li ? `<div class="hud-lanes">${laneHtml(li)}</div>` : ''}`;
     const left = Math.max(0, nav.rt.total - nav.along);
     $('hudEta').textContent = `${fmtClock(Date.now() + nav.rt.duration * (left / nav.rt.total) * 1000)} · ${fmtDist(left)}`;
   } else { turn.innerHTML = ''; $('hudEta').textContent = ''; }

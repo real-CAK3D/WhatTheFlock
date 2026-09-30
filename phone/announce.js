@@ -17,6 +17,8 @@ const ANN_CATS = {
   flock:      { label: 'Flock cameras (board)',    prio: 3, voice: true,  notify: true },
   cameras:    { label: 'Mapped cameras ahead',     prio: 2, voice: true,  notify: true },
   traffic:    { label: 'Traffic & incidents',      prio: 2, voice: true,  notify: true },
+  weather:    { label: 'Weather on the route',     prio: 2, voice: true,  notify: true },
+  hazards:    { label: 'Hazard & police reports',  prio: 2, voice: true,  notify: true },
   speed:      { label: 'Speed limits & speeding',  prio: 2, voice: true,  notify: false },
   custom:     { label: 'My alerts',                prio: 2, voice: true,  notify: true },
   places:     { label: 'Places ahead (gas, food…)', prio: 1, voice: true,  notify: false },
