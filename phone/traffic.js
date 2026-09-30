@@ -142,6 +142,9 @@ function trafficOnFix(f) {
   fetchIncidents();
   if (!opts.trafficAlerts || !f || f.acc > 80) return;
   if (Date.now() - lastIncAlert < INC_ALERT_GAP_MS) return;
+  // Hundreds of incidents with many points each: check every 3 s, not every fix.
+  if (Date.now() - (trafficOnFix.at || 0) < 3000) return;
+  trafficOnFix.at = Date.now();
   const moving = f.spd != null && f.spd > 3 && f.hdg != null && !Number.isNaN(f.hdg);
   const onRoute = typeof nav !== 'undefined' && nav ? routeIncidents(nav.rt) : null;
   // Collect everything ahead, then announce only the nearest. A long jam arrives

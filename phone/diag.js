@@ -25,6 +25,7 @@ async function collectDiag(reason) {
     speech: 'speechSynthesis' in window, sw: !!navigator.serviceWorker?.controller,
     storageMB: est ? Math.round(est.usage / 1e6) : null, online: navigator.onLine,
     view3d: !!opts.view3d, navigating: typeof nav !== 'undefined' && !!nav,
+    perf: typeof perfSummary === 'function' ? perfSummary() : null,
     errors: diagErrors.slice(-20), log: (typeof logLines !== 'undefined' ? logLines : []).slice(-40).map(l => l.line),
   };
 }
@@ -46,5 +47,9 @@ async function sendDiag(reason = 'manual') {
   }
   // In the Android app, report in automatically after start-up (and again after
   // a minute, once GPS/USB have had a chance to connect).
-  if (window.FY_NATIVE) { setTimeout(() => sendDiag('startup'), 15000); setTimeout(() => sendDiag('after-1-min'), 70000); }
+  if (window.FY_NATIVE) {
+    setTimeout(() => sendDiag('startup'), 15000);
+    setTimeout(() => sendDiag('after-1-min'), 70000);
+    setInterval(() => sendDiag('periodic'), 5 * 60e3);   // GPS rate + timings during a drive
+  }
 })();

@@ -161,6 +161,18 @@ function sync3D(now = false) {
   map3d.getSource('fy-me').setData(fix ? pt(fix.lon, fix.lat, {}) : EMPTY);
 }
 
+// Cheap per-GPS-fix update: just the position dot (and the route line now and
+// then). The full sync3D rebuild only runs when detections/cameras change.
+let me3DTrackAt = 0;
+function sync3DMe() {
+  if (!map3dActive()) return;
+  map3d.getSource('fy-me').setData(fix ? pt(fix.lon, fix.lat, {}) : EMPTY);
+  if (Date.now() - me3DTrackAt > 10000 && data.track.length > 1) {
+    me3DTrackAt = Date.now();
+    map3d.getSource('fy-track').setData({ type: 'Feature', geometry: { type: 'LineString', coordinates: data.track.map(p => [p.lon, p.lat]) }, properties: {} });
+  }
+}
+
 // Follow mode in 3D: keep me centred and, when moving, turn the map to face
 // the direction of travel like a car satnav.
 function follow3D() {

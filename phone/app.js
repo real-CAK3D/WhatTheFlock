@@ -151,7 +151,9 @@ function onFix() {
       data.track.push({ lat: +fix.lat.toFixed(6), lon: +fix.lon.toFixed(6), ts: fix.ts });
       if (data.track.length > MAX_TRACK) data.track.splice(0, data.track.length - MAX_TRACK);
       routeLine && routeLine.addLatLng([fix.lat, fix.lon]);
-      save();
+      // Route points alone don't need an immediate save (writing all stored data
+      // every second while driving was a big cost); batch them.
+      if (!onFix.saveT) onFix.saveT = setTimeout(() => { onFix.saveT = null; save(); }, 10000);
     }
   }
   if (map) {
@@ -165,17 +167,41 @@ function onFix() {
       if (opts.follow) map.panTo(ll, { animate: true });
     }
   }
-  if (typeof layersOnFix === 'function') layersOnFix(fix);
-  if (typeof navOnFix === 'function') navOnFix(fix);
-  if (typeof speedOnFix === 'function') speedOnFix(fix);
-  if (typeof trafficOnFix === 'function') trafficOnFix(fix);
-  if (typeof codriverOnFix === 'function') codriverOnFix(fix);
-  if (typeof drivesOnFix === 'function') drivesOnFix(fix);
-  if (typeof announceOnFix === 'function') announceOnFix(fix);
-  if (typeof weatherOnFix === 'function') weatherOnFix(fix);
-  if (typeof hazardsOnFix === 'function') hazardsOnFix(fix);
-  mapChanged();
+  // Move the 3D dot now (cheap); the full 3D layer rebuild is only for data changes.
+  if (typeof sync3DMe === 'function') sync3DMe();
   if (typeof follow3D === 'function') follow3D();
+  perfFix();
+  // Everything else runs just after, so the dot and map move without waiting on it.
+  clearTimeout(onFix.t);
+  onFix.t = setTimeout(runFixHandlers, 0);
+}
+
+// Per-fix work, timed so diagnostics can show what costs what (diag.js).
+const FIX_HANDLERS = ['navOnFix', 'speedOnFix', 'codriverOnFix', 'layersOnFix', 'trafficOnFix', 'drivesOnFix', 'announceOnFix', 'weatherOnFix', 'hazardsOnFix'];
+const perf = { fixes: 0, lastTs: 0, gaps: [], handlers: {} };
+function perfFix() {
+  const now = performance.now();
+  if (perf.lastTs) { perf.gaps.push(now - perf.lastTs); if (perf.gaps.length > 60) perf.gaps.shift(); }
+  perf.lastTs = now; perf.fixes++;
+}
+function runFixHandlers() {
+  if (!fix) return;
+  for (const name of FIX_HANDLERS) {
+    const fn = window[name];
+    if (typeof fn !== 'function') continue;
+    const t0 = performance.now();
+    try { fn(fix); } catch (e) { log(`[${name}] ${e.message}`); }
+    const dt = performance.now() - t0, h = perf.handlers[name] || (perf.handlers[name] = { n: 0, total: 0, max: 0 });
+    h.n++; h.total += dt; h.max = Math.max(h.max, dt);
+  }
+}
+// Summary for diagnostics: GPS update rate and the slowest handlers.
+function perfSummary() {
+  const g = perf.gaps, avg = g.length ? g.reduce((a, b) => a + b, 0) / g.length : 0;
+  return {
+    fixes: perf.fixes, avgGapMs: Math.round(avg), maxGapMs: Math.round(Math.max(0, ...g)),
+    handlers: Object.fromEntries(Object.entries(perf.handlers).map(([k, v]) => [k, { avgMs: +(v.total / v.n).toFixed(1), maxMs: Math.round(v.max) }])),
+  };
 }
 
 // Tell the 3D view (map3d.js, if loaded) that something it mirrors changed.

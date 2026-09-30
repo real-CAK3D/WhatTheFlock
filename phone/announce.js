@@ -102,6 +102,9 @@ function placesAheadOnFix(f) {
   if (!f || f.acc > 60 || typeof allPlaces !== 'function') return;
   const now = Date.now();
   if (now - lastPlaceSay < 60000) return;             // at most one place call a minute
+  // Scanning every place against the route is heavy; every 5 s is plenty.
+  if (now - (placesAheadOnFix.at || 0) < 5000) return;
+  placesAheadOnFix.at = now;
   const cats = Object.keys(opts.placeAlerts).filter(k => opts.placeAlerts[k]);
   if (!cats.length) return;
   const navOn = typeof nav !== 'undefined' && nav;

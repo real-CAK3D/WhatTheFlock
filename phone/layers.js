@@ -302,6 +302,9 @@ const angDiff = (a, b) => Math.abs(((a - b + 540) % 360) - 180);
 
 function layersOnFix(f) {
   if (!opts.alertMapped || !f || f.acc > 100) return;
+  // Loops over every mapped camera: every 2 s is plenty for alerts.
+  if (Date.now() - (layersOnFix.at || 0) < 2000) return;
+  layersOnFix.at = Date.now();
   // When moving with a heading, skip cameras already behind or beside us.
   const moving = f.spd != null && f.spd > 3 && f.hdg != null && !Number.isNaN(f.hdg);
   const now = Date.now();
