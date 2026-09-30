@@ -1,0 +1,10 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Flock You</string>
+    <string name="title_activity_main">Flock You</string>
+    <string name="package_name">com.cak3d.flockyou</string>
+    <string name="custom_url_scheme">com.cak3d.flockyou</string>
+    <!-- Persistent notification while running in the background (background-geolocation plugin). -->
+    <string name="capacitor_background_geolocation_notification_channel_name">Driving &amp; camera alerts</string>
+    <string name="capacitor_background_geolocation_notification_color">#58a6ff</string>
+</resources>

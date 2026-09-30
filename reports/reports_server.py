@@ -56,9 +56,22 @@ def active(reports, now=None):
 class Handler(BaseHTTPRequestHandler):
     server_version = "FlockYouReports/1.0"
 
+    def _cors(self):
+        # The Android app loads its pages from the APK (https://localhost), so
+        # it calls this server cross-origin. Tailnet-only, so any origin is fine.
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+
+    def do_OPTIONS(self):
+        self.send_response(204)
+        self._cors()
+        self.end_headers()
+
     def _send(self, code, obj):
         body = json.dumps(obj).encode()
         self.send_response(code)
+        self._cors()
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
@@ -67,7 +80,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _body(self):
         n = int(self.headers.get("Content-Length") or 0)
-        if n <= 0 or n > 4096:
+        if n <= 0 or n > 65536:
             return None
         try:
             return json.loads(self.rfile.read(n))
@@ -95,6 +108,13 @@ class Handler(BaseHTTPRequestHandler):
         if data is None:
             return self._send(400, {"error": "bad json"})
         now = time.time()
+        # App diagnostics (the Android app posts these so its status can be
+        # checked from the PC): appended to diag.log next to this file.
+        if path == "diag":
+            data["received"] = time.strftime("%Y-%m-%d %H:%M:%S")
+            with lock, open(os.path.join(HERE, "diag.log"), "a", encoding="utf-8") as f:
+                f.write(json.dumps(data)[:20000] + "\n")
+            return self._send(200, {"ok": True})
         with lock:
             reports = [r for r in load() if r["expires"] > now - 86400]
             if not path:

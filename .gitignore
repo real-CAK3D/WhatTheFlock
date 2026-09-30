@@ -15,3 +15,8 @@ api/exports/
 phone/config.local.js
 logs/
 reports/reports.json*
+phone/download/
+reports/diag.log
+FlockYou.apk
+android-app/node_modules/
+android-app/www/

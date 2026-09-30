@@ -1,0 +1,15 @@
+{
+  "name": "flockyou-mobile-android",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Android app wrapper for Flock You Mobile",
+  "scripts": {},
+  "dependencies": {
+    "@capacitor-community/background-geolocation": "^1.2.26",
+    "@capacitor-community/text-to-speech": "^8.0.2",
+    "@capacitor/android": "^8.5.2",
+    "@capacitor/cli": "^8.5.2",
+    "@capacitor/core": "^8.5.2",
+    "@capacitor/local-notifications": "^8.3.1"
+  }
+}

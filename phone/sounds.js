@@ -93,6 +93,7 @@ function speak(text) {
 async function notify(title, body, tag) {
   if (!opts.notify || !('Notification' in window) || Notification.permission !== 'granted') return;
   if (document.visibilityState === 'visible') return;   // the in-app toast already shows it
+  if (window.fyNativeNotify) return window.fyNativeNotify(title, body, tag);   // Android app (native.js)
   try {
     const reg = await navigator.serviceWorker?.ready;
     const o = { body, tag, renotify: true, icon: 'icon.svg', badge: 'icon.svg', vibrate: opts.vibe ? [200, 100, 200] : undefined };

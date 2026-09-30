@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Espressif (XIAO ESP32-S3 USB Serial/JTAG): vendor 0x303a = 12346 -->
+    <usb-device vendor-id="12346" />
+</resources>

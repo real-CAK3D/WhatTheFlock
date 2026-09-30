@@ -1,0 +1,10 @@
+{
+  "appId": "com.cak3d.flockyou",
+  "appName": "Flock You",
+  "webDir": "www",
+  "server": { "androidScheme": "https" },
+  "android": {
+    "allowMixedContent": false,
+    "useLegacyBridge": true
+  }
+}

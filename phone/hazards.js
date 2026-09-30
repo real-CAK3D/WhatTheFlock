@@ -8,7 +8,7 @@
 //   - Reports made with no signal are queued and sent later
 // Loaded after weather.js.
 
-const REPORTS_URL = '/reports/';
+const REPORTS_URL = window.FY_REPORTS_URL || '/reports/';   // the Android app sets an absolute URL
 const HZ_POLL_MS = 60000;
 const HZ_BOX_KM = 30;
 const HZ_WARN_M = 1600;
