@@ -24,6 +24,8 @@ to the home screen; works with no cell service once set up.
 | `sd.js` | Board microSD: import the unlimited detection log, back up / restore the whole app via the card |
 | `codriver.js` | Rally co-driver / curve warnings: corner grading 1-6, hairpins, squares, pace notes, speed advice, demo drive, GPX import, pace-note CSV, curviest route |
 | `drives.js` | Drive recorder, live telemetry (speed, altitude, G), drive history with charts, speed heat map, GPX export |
+| `hud.js` | Map speedometer styles; full-screen driving HUD (mirror for windshield, color themes) |
+| `announce.js` | Alert center: per-category voice/notification, priority speech queue, places ahead, break/GPS/battery warnings, custom alerts |
 | `sw.js` | Service worker: offline app shell and tile caches |
 | `test/sw-offline.test.mjs` | `node test/sw-offline.test.mjs` - offline cache behaviour |
 

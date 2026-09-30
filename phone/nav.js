@@ -372,7 +372,9 @@ function selectPlace(p) {
     <div class="ns-acts">
       <button id="nsGo" class="primary">Directions</button>
       <button id="nsSave">${saved ? '★ Saved' : '☆ Save'}</button>
+      ${typeof addGeoAlert === 'function' ? '<button id="nsAlert" title="Alert me when I\'m near">🔔</button>' : ''}
     </div>`;
+  if ($('nsAlert')) $('nsAlert').onclick = () => addGeoAlert(p.name, p.lat, p.lon);
   ui.navSheet.hidden = false;
   $('nsClose').onclick = clearDest;
   $('nsGo').onclick = () => planRoute();

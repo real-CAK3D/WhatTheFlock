@@ -171,8 +171,8 @@ function trafficOnFix(f) {
   const delay = totalDelay >= 60 ? `, ${fmtDur(totalDelay)} delay` : '';
   toast(`${(INC_TYPES[i.cat] || INC_TYPES[0])[1]} ${what} ahead · ${fmtDist(d)}${delay}`, i.mag >= 2 || i.cat === 1 || i.cat === 8);
   if (!opts.muted) playSound('warble');
-  if (typeof say === 'function' && opts.navVoice) say(`${what} reported ahead in ${fmtDist(d)}${delay}`);
-  if (typeof notify === 'function') notify(`${what} ahead`, `${i.desc} · ${fmtDist(d)}${delay}`, 'fy-inc-' + i.id);
+  announce('traffic', `${what} reported ahead in ${fmtDist(d)}${delay}`,
+    { title: `${what} ahead`, body: `${i.desc} · ${fmtDist(d)}${delay}`, tag: 'fy-inc-' + i.id });
 }
 
 // Incidents lying on a route, with their position along it.

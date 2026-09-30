@@ -136,6 +136,7 @@ function matchRoad(f, sticky = true) {
 // ---------------------------------------------------------------- speed
 
 let spdEMA = null, prevFix = null, overSince = 0, lastOverWarn = 0, limitNow = null;
+let speedNowKmh = null, overNow = false;   // shared with the full-screen HUD (hud.js)
 const toUnits = kmh => opts.units === 'metric' ? kmh : kmh / 1.60934;
 const unitLabel = () => opts.units === 'metric' ? 'km/h' : 'mph';
 
@@ -165,6 +166,7 @@ function limitFor(w) {
 async function speedOnFix(f) {
   if (!opts.showSpeed || !f || f.acc > 60) return;
   const kmh = currentSpeedKmh(f);
+  speedNowKmh = kmh;
   ensureRoads(f);   // background; next fix benefits
   const w = matchRoad(f);
   if (w) lastWay = w;
@@ -217,8 +219,7 @@ function speedHintsOnFix() {
   // Say it once per change: slowdowns earlier, increases just before.
   if (!hintSaid.has(found.key) && found.d <= (down ? 800 : 300)) {
     hintSaid.add(found.key);
-    if (typeof say === 'function' && opts.navVoice)
-      say(down ? `Speed limit drops to ${found.lim.v} ahead` : `Speed limit rises to ${found.lim.v} ahead`);
+    announce('speed', down ? `Speed limit drops to ${found.lim.v} ahead` : `Speed limit rises to ${found.lim.v} ahead`);
   }
 }
 
@@ -240,8 +241,9 @@ function paintSpeed(kmh, w) {
 
 function checkOver(kmh) {
   const box = $('speedo');
-  if (kmh == null || !limitNow || opts.speedWarn < 0) { box.classList.remove('over'); overSince = 0; return; }
+  if (kmh == null || !limitNow || opts.speedWarn < 0) { box.classList.remove('over'); overSince = 0; overNow = false; return; }
   const over = toUnits(kmh) > limitNow.v + opts.speedWarn;
+  overNow = over;
   box.classList.toggle('over', over);
   if (!over) { overSince = 0; return; }
   if (!overSince) overSince = Date.now();
@@ -249,7 +251,7 @@ function checkOver(kmh) {
   if (Date.now() - overSince > 3000 && Date.now() - lastOverWarn > 45000) {
     lastOverWarn = Date.now();
     if (!opts.muted) playSound('double');
-    if (typeof say === 'function' && opts.navVoice) say(`Speed limit ${limitNow.v}`);
+    announce('speed', `Speed limit ${limitNow.v}`);
   }
 }
 

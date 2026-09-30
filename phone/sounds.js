@@ -115,8 +115,9 @@ function onDetectionAlert(d, isNew, tier, rssi) {
   if (opts.vibe && !opts.muted && navigator.vibrate) navigator.vibrate(VIBES[slot]);
   if (isNew) {
     toast(`New camera · tier ${tier} · ${d.mac}`, tier >= 3);
-    speak(`Flock camera detected. Tier ${tier}. ${signalWord(rssi)} signal.`);
-    notify(`New camera · tier ${tier}`, `${d.mac} · ${rssi} dBm · ${TIER_NAMES[tier] || d.method}`, 'fy-' + d.mac);
+    // Voice + notification per the Voice & alerts settings (announce.js).
+    announce('flock', `Flock camera detected. Tier ${tier}. ${signalWord(rssi)} signal.`,
+      { title: `New camera · tier ${tier}`, body: `${d.mac} · ${rssi} dBm · ${TIER_NAMES[tier] || d.method}`, tag: 'fy-' + d.mac });
   }
 }
 
@@ -124,8 +125,7 @@ function onMappedAlert(p, what, dist, msg) {
   toast(msg, true);
   playEvent('mapped');
   if (opts.vibe && !opts.muted && navigator.vibrate) navigator.vibrate([150, 80, 150]);
-  speak(`${what} ahead. ${fmtDist(dist)}.`);
-  notify(`${what} ahead`, msg, 'fy-map-' + p.id);
+  announce('cameras', `${what} ahead. ${fmtDist(dist)}.`, { title: `${what} ahead`, body: msg, tag: 'fy-map-' + p.id });
 }
 
 // Board buzzer follows the output choice: 'phone' silences it, others restore
@@ -162,8 +162,8 @@ function applyOutputToBoard() {
         <select data-slot="${k}">${opt(opts.sounds[k])}</select>
         <button data-test="${k}" title="Play">▶</button>`).join('')}
     </div>
-    <label class="sw"><input type="checkbox" id="optVoice"> Spoken alerts ("Plate reader ahead, 500 feet")</label>
-    <label class="sw"><input type="checkbox" id="optNotify"> Notifications when the app is in the background</label>`;
+    <label class="sw"><input type="checkbox" id="optNotify"> Allow notifications when the app is in the background</label>
+    <p class="mute small1">What gets read aloud is set per kind of alert under Voice &amp; alerts.</p>`;
   $('slot-sounds').append(card);
 
   $('optOutput').value = opts.output;
@@ -172,7 +172,6 @@ function applyOutputToBoard() {
   $('optSoundWhen').onchange = e => { opts.soundWhen = e.target.value; saveOpts(); };
   $('optVolume').value = opts.volume;
   $('optVolume').oninput = e => { opts.volume = Number(e.target.value); if (master) master.gain.value = opts.volume / 100; saveOpts(); };
-  bindOpt('optVoice', 'voice', () => opts.voice && speak('Spoken alerts on.'));
   bindOpt('optNotify', 'notify', () => { if (opts.notify && 'Notification' in window && Notification.permission === 'default') Notification.requestPermission(); });
   card.querySelectorAll('[data-slot]').forEach(s => s.onchange = () => { opts.sounds[s.dataset.slot] = s.value; saveOpts(); playSound(s.value); });
   card.querySelectorAll('[data-test]').forEach(b => b.onclick = () => playSound(opts.sounds[b.dataset.test]));

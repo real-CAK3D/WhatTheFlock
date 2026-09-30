@@ -94,7 +94,7 @@ nav button.active { color:var(--accent); font-weight:600; }
 .maplibregl-popup-content { background:#fff; color:#111; font-size:13px; border-radius:8px; }
 .fab.lyr { left:12px; right:auto; top:66px; bottom:auto; font-size:20px; }
 #lyrPanel {
-  position:absolute; left:12px; top:122px; z-index:600; display:none; width:min(300px, calc(100vw - 24px));
+  position:absolute; left:12px; top:122px; z-index:800; display:none; width:min(300px, calc(100vw - 24px));
   background:var(--card); border:1px solid var(--line); border-radius:10px; padding:8px 12px;
 }
 #lyrPanel.open { display:block; }
@@ -158,8 +158,10 @@ nav button.active { color:var(--accent); font-weight:600; }
 .finder-bar { height:14px; background:#262b36; border-radius:7px; overflow:hidden; margin:6px 0; }
 .finder-bar > div { height:100%; width:0; background:var(--accent); transition:width .3s; }
 
+/* Layering: map HUD (speedometer, telemetry, pace notes, nav banner/bar) sits at 500-700;
+   everything that opens (menu, search results, sheets) sits above it at 780+. */
 /* ---- navigation ---- */
-#navSearch { position:absolute; left:10px; right:56px; top:10px; z-index:650; }
+#navSearch { position:absolute; left:10px; right:56px; top:10px; z-index:780; }
 #navSearch[hidden] { display:none; }
 #navQ {
   width:100%; height:46px; border-radius:23px; border:1px solid var(--line); background:var(--card); color:var(--fg);
@@ -178,7 +180,7 @@ nav button.active { color:var(--accent); font-weight:600; }
 .nr-d { font-size:12px; white-space:nowrap; }
 
 #navSheet {
-  position:absolute; left:0; right:0; bottom:0; z-index:700; background:var(--card); border-top:1px solid var(--line);
+  position:absolute; left:0; right:0; bottom:0; z-index:790; background:var(--card); border-top:1px solid var(--line);
   border-radius:16px 16px 0 0; padding:14px 16px; box-shadow:0 -4px 16px rgba(0,0,0,.4); max-height:60%; overflow:auto;
 }
 #navSheet[hidden] { display:none; }
@@ -323,6 +325,67 @@ body.navigating #telem { top:176px; }
 #driveDetail #ddAlt { height:70px; }
 .dd-stats { padding:8px 0; border:0; }
 nav button { font-size:13px; }
+
+/* ---- HUD ---- */
+/* On-map speedometer styles */
+#speedo.st-compact .spd { width:50px; height:50px; border-width:2px; }
+#speedo.st-compact .spd b { font-size:19px; }
+#speedo.st-compact #limSign { width:38px; height:48px; }
+#speedo.st-compact #limSign b { font-size:17px; }
+#speedo.st-compact #limSign .lim-top { font-size:6px; }
+#speedo.st-compact #roadName { display:none; }
+#speedo.st-big .spd { width:96px; height:96px; border-width:4px; }
+#speedo.st-big .spd b { font-size:40px; }
+#speedo.st-big .spd span { font-size:13px; }
+#speedo.st-big #limSign { width:64px; height:80px; }
+#speedo.st-big #limSign b { font-size:32px; }
+#speedo.st-big #limSign .lim-top { font-size:9px; }
+.fab.hudfab { bottom:196px; font-size:13px; font-weight:800; }
+body.navigating .fab.hudfab { bottom:264px; }
+
+/* Full-screen HUD */
+#hud { position:fixed; inset:0; z-index:1050; background:#000; --hc:#39ff88; color:var(--hc); display:flex; flex-direction:column;
+  font-family:system-ui, sans-serif; user-select:none; }
+#hud[hidden] { display:none; }
+#hud.c-white { --hc:#ffffff; } #hud.c-amber { --hc:#ffb000; } #hud.c-cyan { --hc:#3fd8ff; }
+#hud.over { --hc:#ff3b30; }
+#hud.over .hud-speed { animation:hudblink .8s steps(2) infinite; }
+@keyframes hudblink { 50% { opacity:.35; } }
+.hud-in { flex:1; display:flex; flex-direction:column; justify-content:center; gap:2vh; padding:4vh 6vw; }
+#hud.mirror .hud-in { transform:scaleX(-1); }
+.hud-top { display:flex; justify-content:space-between; font-size:4.5vh; opacity:.8; }
+.hud-main { display:flex; align-items:center; justify-content:center; gap:5vw; }
+.hud-speed { text-align:center; line-height:.85; }
+#hudSpeed { font-size:min(38vw, 36vh); font-weight:800; font-variant-numeric:tabular-nums; }
+#hudUnit { font-size:5vh; opacity:.75; }
+.hud-side { display:flex; flex-direction:column; align-items:center; gap:2vh; }
+#hudLimit { border:0.8vh solid var(--hc); border-radius:2vh; padding:1vh 2.5vh; font-size:11vh; font-weight:800; text-align:center; line-height:1; }
+#hudLimit[hidden] { display:none; }
+#hudLimit small { display:block; font-size:2.6vh; font-weight:700; letter-spacing:.2em; }
+#hudLimit i { display:block; font-size:2.4vh; font-style:normal; opacity:.7; }
+#hudHint { font-size:4.5vh; font-weight:700; }
+.hud-row { display:flex; align-items:baseline; justify-content:center; gap:3vw; font-size:7vh; min-height:0; }
+.hud-row:empty { display:none; }
+.hud-row b { font-size:9vh; }
+.hud-row em { font-style:normal; font-size:4.5vh; opacity:.8; max-width:55vw; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.hud-alert { text-align:center; font-size:7vh; font-weight:800; color:#000; background:var(--hc); border-radius:2vh; padding:1vh; }
+.hud-alert[hidden] { display:none; }
+.hud-ctl { display:flex; gap:10px; justify-content:center; padding:10px; padding-bottom:max(10px, env(safe-area-inset-bottom)); opacity:.55; }
+.hud-ctl button { background:#111; color:#aaa; border:1px solid #333; }
+@media (orientation:landscape) {
+  .hud-in { flex-direction:row; flex-wrap:wrap; align-content:center; }
+  .hud-top, .hud-alert { flex-basis:100%; }
+  .hud-main { flex:1 1 55%; }
+  .hud-row { flex:1 1 40%; flex-direction:column; align-items:center; gap:0; }
+}
+
+/* ---- voice & alerts ---- */
+.card h3 { font-size:14px; margin:14px 0 4px; }
+.ann-grid { display:grid; grid-template-columns:1fr 36px 36px; gap:6px 4px; align-items:center; font-size:14px; margin:6px 0 10px; }
+.ann-grid b { text-align:center; }
+.ann-grid input { width:20px; height:20px; justify-self:center; }
+.al { font-size:13px; padding:3px 0; border-bottom:1px solid var(--line); }
+.al:last-child { border-bottom:0; }
 
 /* Night map: invert the light OSM street tiles in 2D, leave markers and satellite alone. */
 body.night .leaflet-tile-pane { filter:invert(1) hue-rotate(180deg) brightness(.85) contrast(.9); }

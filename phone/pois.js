@@ -9,25 +9,25 @@
 // Loaded after trip.js; uses globals from app.js, layers.js, nav.js, trip.js.
 
 const PLACE_CATS = {
-  fuel:     { label: 'Gas',            emoji: '⛽', color: '#ff9f0a', on: true,  words: 'gas fuel petrol diesel station' },
-  ev:       { label: 'EV charging',    emoji: '🔌', color: '#30d158', on: true,  words: 'ev charging charger electric tesla supercharger' },
-  rest:     { label: 'Rest areas',     emoji: '🅿️', color: '#0a84ff', on: true,  words: 'rest area stop' },
-  services: { label: 'Service plazas', emoji: '🛣️', color: '#5e5ce6', on: true,  words: 'service plaza travel center truck stop services' },
-  toll:     { label: 'Tolls',          emoji: '💰', color: '#ffd60a', on: true,  words: 'toll booth gantry' },
-  food:     { label: 'Restaurants',    emoji: '🍽️', color: '#ff453a', on: true,  words: 'restaurant food dinner lunch eat diner' },
-  fastfood: { label: 'Fast food',      emoji: '🍔', color: '#ff6b3d', on: true,  words: 'fast food burger pizza drive thru mcdonalds' },
-  coffee:   { label: 'Coffee',         emoji: '☕', color: '#a2845e', on: true,  words: 'coffee cafe dunkin starbucks' },
-  lodging:  { label: 'Hotels',         emoji: '🏨', color: '#bf5af2', on: true,  words: 'hotel motel lodging inn stay' },
-  hospital: { label: 'Hospitals',      emoji: '🏥', color: '#ff2d55', on: true,  words: 'hospital emergency er' },
-  toilets:  { label: 'Restrooms',      emoji: '🚻', color: '#64d2ff', on: false, words: 'restroom bathroom toilet' },
-  store:    { label: 'Convenience',    emoji: '🏪', color: '#ffcc00', on: false, words: 'convenience store' },
-  grocery:  { label: 'Groceries',      emoji: '🛒', color: '#32d74b', on: false, words: 'grocery supermarket' },
-  pharmacy: { label: 'Pharmacy',       emoji: '💊', color: '#ff375f', on: false, words: 'pharmacy drugstore cvs walgreens' },
-  money:    { label: 'ATM / Bank',     emoji: '🏧', color: '#8e8e93', on: false, words: 'atm bank cash' },
-  repair:   { label: 'Auto repair',    emoji: '🔧', color: '#98989d', on: false, words: 'repair mechanic tire tyre car wash' },
-  police:   { label: 'Police',         emoji: '🚓', color: '#0040dd', on: false, words: 'police' },
-  camping:  { label: 'Camping',        emoji: '⛺', color: '#34c759', on: false, words: 'camping campground camp' },
-  sights:   { label: 'Sights',         emoji: '📸', color: '#ff9500', on: false, words: 'attraction viewpoint scenic sight' },
+  fuel:     { label: 'Gas', one: 'Gas station',            emoji: '⛽', color: '#ff9f0a', on: true,  words: 'gas fuel petrol diesel station' },
+  ev:       { label: 'EV charging', one: 'EV charger',    emoji: '🔌', color: '#30d158', on: true,  words: 'ev charging charger electric tesla supercharger' },
+  rest:     { label: 'Rest areas', one: 'Rest area',     emoji: '🅿️', color: '#0a84ff', on: true,  words: 'rest area stop' },
+  services: { label: 'Service plazas', one: 'Service plaza', emoji: '🛣️', color: '#5e5ce6', on: true,  words: 'service plaza travel center truck stop services' },
+  toll:     { label: 'Tolls', one: 'Toll point',          emoji: '💰', color: '#ffd60a', on: true,  words: 'toll booth gantry' },
+  food:     { label: 'Restaurants', one: 'Restaurant',    emoji: '🍽️', color: '#ff453a', on: true,  words: 'restaurant food dinner lunch eat diner' },
+  fastfood: { label: 'Fast food', one: 'Fast food',      emoji: '🍔', color: '#ff6b3d', on: true,  words: 'fast food burger pizza drive thru mcdonalds' },
+  coffee:   { label: 'Coffee', one: 'Coffee shop',         emoji: '☕', color: '#a2845e', on: true,  words: 'coffee cafe dunkin starbucks' },
+  lodging:  { label: 'Hotels', one: 'Hotel',         emoji: '🏨', color: '#bf5af2', on: true,  words: 'hotel motel lodging inn stay' },
+  hospital: { label: 'Hospitals', one: 'Hospital',      emoji: '🏥', color: '#ff2d55', on: true,  words: 'hospital emergency er' },
+  toilets:  { label: 'Restrooms', one: 'Restroom',      emoji: '🚻', color: '#64d2ff', on: false, words: 'restroom bathroom toilet' },
+  store:    { label: 'Convenience', one: 'Convenience store',    emoji: '🏪', color: '#ffcc00', on: false, words: 'convenience store' },
+  grocery:  { label: 'Groceries', one: 'Grocery store',      emoji: '🛒', color: '#32d74b', on: false, words: 'grocery supermarket' },
+  pharmacy: { label: 'Pharmacy', one: 'Pharmacy',       emoji: '💊', color: '#ff375f', on: false, words: 'pharmacy drugstore cvs walgreens' },
+  money:    { label: 'ATM / Bank', one: 'ATM',     emoji: '🏧', color: '#8e8e93', on: false, words: 'atm bank cash' },
+  repair:   { label: 'Auto repair', one: 'Auto repair',    emoji: '🔧', color: '#98989d', on: false, words: 'repair mechanic tire tyre car wash' },
+  police:   { label: 'Police', one: 'Police',         emoji: '🚓', color: '#0040dd', on: false, words: 'police' },
+  camping:  { label: 'Camping', one: 'Campground',        emoji: '⛺', color: '#34c759', on: false, words: 'camping campground camp' },
+  sights:   { label: 'Sights', one: 'Sight',         emoji: '📸', color: '#ff9500', on: false, words: 'attraction viewpoint scenic sight' },
 };
 const QUICK_CATS = ['fuel', 'food', 'fastfood', 'coffee', 'rest', 'services', 'ev', 'lodging', 'toilets'];
 const PLACE_MAX_AGE = 30 * 86400e3;
@@ -163,7 +163,7 @@ function allPlaces() {
 const placeLayer = L.layerGroup().addTo(map);
 let placeBusy = false;
 
-function placeName(p) { return p.tags.name || p.tags.brand || p.tags.operator || PLACE_CATS[p.cat].label.replace(/s$/, ''); }
+function placeName(p) { return p.tags.name || p.tags.brand || p.tags.operator || PLACE_CATS[p.cat].one; }
 function placeAddr(p) { return [[p.tags['addr:housenumber'], p.tags['addr:street']].filter(Boolean).join(' '), p.tags['addr:city']].filter(Boolean).join(', '); }
 
 function placePopup(p) {
@@ -178,13 +178,17 @@ function placePopup(p) {
   if (t['payment:e_zpass'] === 'yes') extras.push('E-ZPass');
   if (t.emergency === 'yes') extras.push('emergency room');
   const navOn = typeof nav !== 'undefined' && nav;
-  return `<b>${c.emoji} ${esc(placeName(p))}</b><br><span class="mute">${esc(c.label.replace(/s$/, ''))}${fix ? ' · ' + fmtDist(distM(fix, p)) + ' away' : ''}</span>
+  return `<b>${c.emoji} ${esc(placeName(p))}</b><br><span class="mute">${esc(c.one)}${fix ? ' · ' + fmtDist(distM(fix, p)) + ' away' : ''}</span>
     ${placeAddr(p) ? '<br>' + esc(placeAddr(p)) : ''}
     ${extras.length ? '<br>' + esc(extras.join(' · ')) : ''}
     ${t.opening_hours ? '<br>🕘 ' + esc(t.opening_hours === '24/7' ? 'Open 24 hours' : t.opening_hours) : ''}
     ${t.phone ? `<br>📞 <a href="tel:${esc(t.phone.replace(/[^\d+]/g, ''))}">${esc(t.phone)}</a>` : ''}
     ${t.website ? `<br><a href="${esc(t.website.startsWith('http') ? t.website : 'https://' + t.website)}" target="_blank" rel="noopener">Website</a>` : ''}
-    <div class="pp-acts"><button onclick="placeGo('${p.id}')">Directions</button>${navOn ? `<button onclick="placeStop('${p.id}')">Add stop</button>` : ''}</div>`;
+    <div class="pp-acts"><button onclick="placeGo('${p.id}')">Directions</button>${navOn ? `<button onclick="placeStop('${p.id}')">Add stop</button>` : ''}<button onclick="placeAlert('${p.id}')" title="Alert me when I'm near">🔔</button></div>`;
+}
+function placeAlert(id) {
+  const p = placeById(id);
+  if (p && typeof addGeoAlert === 'function') addGeoAlert(placeName(p), p.lat, p.lon);
 }
 
 function renderPlaces() {

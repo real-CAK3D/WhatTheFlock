@@ -171,6 +171,7 @@ function onFix() {
   if (typeof trafficOnFix === 'function') trafficOnFix(fix);
   if (typeof codriverOnFix === 'function') codriverOnFix(fix);
   if (typeof drivesOnFix === 'function') drivesOnFix(fix);
+  if (typeof announceOnFix === 'function') announceOnFix(fix);
   mapChanged();
   if (typeof follow3D === 'function') follow3D();
 }
