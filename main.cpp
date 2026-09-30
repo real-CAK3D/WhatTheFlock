@@ -7,6 +7,9 @@
 #include <Preferences.h>
 #include <NimBLEDevice.h>   // BLE side of the signature union (Flock BLE adverts)
 #include "display_dongle.h"
+#include <SD.h>                 // microSD logging (XIAO Sense), used when USE_SD_CARD
+#include <SPI.h>
+#include "mbedtls/base64.h"
 
 // ============================================================
 // CONFIG  (board defaults; override via platformio build_flags)
@@ -32,6 +35,18 @@
 #define LED_ACTIVE_HIGH    0
 #define MIRROR_SERIAL      1
 #define MIRROR_TX_PIN      43
+// XIAO ESP32-S3 Sense expansion board microSD (SPI). Its chip select is
+// GPIO21 — the same pin as the user LED — so the LED is disabled whenever a
+// card mounts (see ledSet). Without a card the LED behaves as before.
+#define USE_SD_CARD        1
+#define SD_CS_PIN          21
+#define SD_SCK_PIN         7
+#define SD_MISO_PIN        8
+#define SD_MOSI_PIN        9
+#endif
+
+#ifndef USE_SD_CARD
+#define USE_SD_CARD        0
 #endif
 
 #define LED_FLASH_MS       120
@@ -410,7 +425,12 @@ static void dualPrintln(const char* str) {
 #endif
 }
 
+static bool fySdOk = false;   // microSD mounted (it owns GPIO21 then)
+
 static inline void ledSet(bool on) {
+#if USE_SD_CARD && !defined(USE_APA102_LED)
+  if (fySdOk && LED_PIN == SD_CS_PIN) return;   // toggling it would corrupt SD traffic
+#endif
 #if USE_LED
 #if defined(USE_APA102_LED)
   if (on) apa102SetColor(APA102_FLASH_R, APA102_FLASH_G, APA102_FLASH_B);
@@ -1040,7 +1060,8 @@ static Preferences fyPrefs;
 static const char* FY_NVS_NS   = "flockyou";
 static const char* FY_NVS_BEEP = "beepmask";
 
-#define CMD_BUF_LEN 128
+// Big enough for an SD backup chunk: {"cmd":"sd_w","n":123,"d":"<~800 base64>"}.
+#define CMD_BUF_LEN 1100
 static char   cmdBuf[CMD_BUF_LEN];
 static size_t cmdLen = 0;
 
@@ -1073,6 +1094,267 @@ static void fySaveBeepMask() {
   fyPrefs.putUChar(FY_NVS_BEEP, (uint8_t)fyBeepMask);
   fyPrefs.end();
 }
+
+// ============================================================
+// USB write helper
+// ============================================================
+// Serial.setTxTimeoutMs(0) keeps the device from blocking with no host, but
+// it also means a big burst (SD dump / backup read) can overflow the TX
+// buffer and silently lose bytes. Retry briefly until everything is out.
+static void fyWriteAll(const uint8_t* p, size_t n) {
+  unsigned long t0 = millis();
+  while (n) {
+    size_t w = Serial.write(p, n);
+    p += w; n -= w;
+    if (n) {
+      if (millis() - t0 > 1500) return;   // host went away
+      delay(1);
+    }
+  }
+}
+static void fyPrintAll(const char* fmt, ...) __attribute__((format(printf, 1, 2)));
+static void fyPrintAll(const char* fmt, ...) {
+  char buf[1024];
+  va_list a; va_start(a, fmt);
+  int n = vsnprintf(buf, sizeof(buf), fmt, a);
+  va_end(a);
+  if (n > 0) fyWriteAll((const uint8_t*)buf, (size_t)n < sizeof(buf) ? (size_t)n : sizeof(buf) - 1);
+}
+
+// Tiny field readers for the fixed command shapes (no JSON library).
+static bool fyJsonNum(const char* line, const char* key, long long& out) {
+  char pat[24];
+  snprintf(pat, sizeof(pat), "\"%s\"", key);
+  const char* p = strstr(line, pat);
+  if (!p) return false;
+  p += strlen(pat);
+  while (*p == ' ' || *p == ':') p++;
+  return sscanf(p, "%lld", &out) == 1;
+}
+static bool fyJsonStr(const char* line, const char* key, const char*& start, size_t& len) {
+  char pat[24];
+  snprintf(pat, sizeof(pat), "\"%s\"", key);
+  const char* p = strstr(line, pat);
+  if (!p) return false;
+  p += strlen(pat);
+  while (*p == ' ' || *p == ':') p++;
+  if (*p != '"') return false;
+  start = ++p;
+  const char* e = strchr(p, '"');
+  if (!e) return false;
+  len = (size_t)(e - p);
+  return true;
+}
+
+// ============================================================
+// MICROSD  (XIAO ESP32-S3 Sense) — unlimited detection log + phone backups
+// ============================================================
+//
+//   /flockyou/detections.jsonl   one JSON object per emitted detection (append-only)
+//   /flockyou/backup.json        the phone app's full backup, written in checked chunks
+//
+// Host commands (phone app):
+//   {"cmd":"set_time","epoch":S}                 wall clock for log timestamps
+//   {"cmd":"sd_info"}                            -> {"event":"sd_info",...}
+//   {"cmd":"sd_dump","from":OFF,"max":N}         -> N x {"event":"sd_det","o":OFF,...}, then {"event":"sd_end","next":..,"size":..}
+//   {"cmd":"sd_wopen"}                           start a new backup (temp file)
+//   {"cmd":"sd_w","n":I,"d":"<base64>"}          append a chunk -> {"event":"sd_ack","n":I}
+//   {"cmd":"sd_wclose","len":L,"crc":"0x..."}    verify + publish -> sd_wok / sd_werr
+//   {"cmd":"sd_r","off":O,"len":L}               -> {"event":"sd_rd","off":O,"size":S,"d":"<base64>"}
+//   {"cmd":"sd_clear_log"}                       delete the detection log -> sd_info
+#if USE_SD_CARD
+static SPIClass fySdSpi(FSPI);
+static const char* FY_SD_DIR = "/flockyou";
+static const char* FY_SD_LOG = "/flockyou/detections.jsonl";
+static const char* FY_SD_BAK = "/flockyou/backup.json";
+static const char* FY_SD_TMP = "/flockyou/backup.tmp";
+static uint32_t fyBootCount = 0;
+static long long fyEpochBase = 0;     // epoch seconds at millis()==0; 0 = not known yet
+static File      fyBakFile;
+static uint32_t  fyBakCrc = 0, fyBakLen = 0;
+static long long fyBakLastN = -1;     // last chunk written; a resend of it is just re-acked
+#define FY_SD_CHUNK 600                // raw bytes per backup chunk (base64 ~800)
+
+static void fySdInit() {
+  // Boot counter tells log lines from different power-ups apart (millis() restarts).
+  if (fyPrefs.begin(FY_NVS_NS, false)) {
+    fyBootCount = fyPrefs.getUInt("boots", 0) + 1;
+    fyPrefs.putUInt("boots", fyBootCount);
+    fyPrefs.end();
+  }
+  fySdSpi.begin(SD_SCK_PIN, SD_MISO_PIN, SD_MOSI_PIN, SD_CS_PIN);
+  if (!SD.begin(SD_CS_PIN, fySdSpi, 20000000)) {
+    dualPrintln("[flockyou] no microSD card — LED stays enabled");
+#if USE_LED && !defined(USE_APA102_LED)
+    pinMode(LED_PIN, OUTPUT);   // SD.begin() may have left the shared pin as CS
+    ledSet(false);
+#endif
+    return;
+  }
+  fySdOk = true;
+  if (!SD.exists(FY_SD_DIR)) SD.mkdir(FY_SD_DIR);
+  dualPrintf("[flockyou] microSD ready: %llu MB card, %llu MB used, boot #%lu\n",
+             SD.cardSize() / (1024ULL * 1024ULL), SD.usedBytes() / (1024ULL * 1024ULL),
+             (unsigned long)fyBootCount);
+}
+
+static void fySdLog(const char* proto, const char* mac, const char* method, uint8_t tier,
+                    int8_t rssi, uint8_t ch, const char* ssid, const char* devName) {
+  if (!fySdOk) return;
+  File f = SD.open(FY_SD_LOG, FILE_APPEND);
+  if (!f) return;
+  char ssidEsc[sizeof(((FYDetection*)0)->ssid) * 6 + 1];
+  jsonEscape(ssidEsc, sizeof(ssidEsc), ssid ? ssid : "");
+  char nameEsc[sizeof(((FYDetection*)0)->ssid) * 6 + 1];
+  jsonEscape(nameEsc, sizeof(nameEsc), devName ? devName : "");
+  unsigned long ms = millis();
+  long long t = fyEpochBase ? fyEpochBase + (long long)(ms / 1000) : 0;
+  f.printf("{\"t\":%lld,\"ms\":%lu,\"boot\":%lu,\"mac\":\"%s\",\"method\":\"%s_%s\",\"tier\":%u,"
+           "\"rssi\":%d,\"ch\":%u,\"ssid\":\"%s\",\"name\":\"%s\"}\n",
+           t, ms, (unsigned long)fyBootCount, mac, proto, method, (unsigned)tier, rssi,
+           (unsigned)ch, ssidEsc, nameEsc);
+  f.close();
+}
+
+static size_t fySdFileSize(const char* path) {
+  File f = SD.open(path, FILE_READ);
+  if (!f) return 0;
+  size_t s = f.size();
+  f.close();
+  return s;
+}
+
+static void fySdInfo() {
+  if (!fySdOk) { fyPrintAll("{\"event\":\"sd_info\",\"ok\":0}\n"); return; }
+  fyPrintAll("{\"event\":\"sd_info\",\"ok\":1,\"card_mb\":%llu,\"total_mb\":%llu,\"used_mb\":%llu,"
+             "\"log_bytes\":%u,\"backup_bytes\":%u,\"boot\":%lu,\"time_set\":%d}\n",
+             SD.cardSize() / (1024ULL * 1024ULL), SD.totalBytes() / (1024ULL * 1024ULL),
+             SD.usedBytes() / (1024ULL * 1024ULL), (unsigned)fySdFileSize(FY_SD_LOG),
+             (unsigned)fySdFileSize(FY_SD_BAK), (unsigned long)fyBootCount, fyEpochBase ? 1 : 0);
+}
+
+// Stream up to `maxLines` log lines starting at byte offset `from`.
+static void fySdDump(long long from, long long maxLines) {
+  File f = fySdOk ? SD.open(FY_SD_LOG, FILE_READ) : File();
+  if (!f) { fyPrintAll("{\"event\":\"sd_end\",\"next\":0,\"size\":0,\"sent\":0}\n"); return; }
+  size_t size = f.size();
+  if (from < 0 || (size_t)from > size) from = 0;
+  f.seek((size_t)from);
+  static char line[600];
+  long sent = 0;
+  while (f.available() && sent < maxLines) {
+    size_t start = f.position();
+    size_t len = f.readBytesUntil('\n', line, sizeof(line) - 1);
+    if (len == 0) continue;
+    line[len] = '\0';
+    if (line[0] != '{' || line[len - 1] != '}') continue;   // skip a torn last line
+    fyPrintAll("{\"event\":\"sd_det\",\"o\":%u,", (unsigned)start);
+    fyWriteAll((const uint8_t*)line + 1, len - 1);
+    fyWriteAll((const uint8_t*)"\n", 1);
+    if ((++sent & 15) == 0) delay(1);
+  }
+  size_t next = f.position();
+  f.close();
+  fyPrintAll("{\"event\":\"sd_end\",\"next\":%u,\"size\":%u,\"sent\":%ld}\n", (unsigned)next, (unsigned)size, sent);
+}
+
+static void fySdWErr(const char* why) {
+  if (fyBakFile) fyBakFile.close();
+  if (fySdOk) SD.remove(FY_SD_TMP);
+  fyPrintAll("{\"event\":\"sd_werr\",\"error\":\"%s\"}\n", why);
+}
+
+static void fySdWOpen() {
+  if (!fySdOk) { fySdWErr("no card"); return; }
+  if (fyBakFile) fyBakFile.close();
+  SD.remove(FY_SD_TMP);
+  fyBakFile = SD.open(FY_SD_TMP, FILE_WRITE);
+  fyBakCrc = 0; fyBakLen = 0; fyBakLastN = -1;
+  if (!fyBakFile) { fySdWErr("open failed"); return; }
+  fyPrintAll("{\"event\":\"sd_ack\",\"n\":-1}\n");
+}
+
+static void fySdW(const char* line) {
+  if (!fyBakFile) { fySdWErr("not open"); return; }
+  long long n = 0;
+  const char* d; size_t dlen;
+  if (!fyJsonNum(line, "n", n) || !fyJsonStr(line, "d", d, dlen)) { fySdWErr("bad chunk"); return; }
+  // The host resends a chunk if our ack got lost: acknowledge again, don't write twice.
+  if (n <= fyBakLastN) { fyPrintAll("{\"event\":\"sd_ack\",\"n\":%lld}\n", n); return; }
+  if (n != fyBakLastN + 1) { fySdWErr("missing chunk"); return; }
+  static uint8_t raw[FY_SD_CHUNK + 8];
+  size_t olen = 0;
+  if (mbedtls_base64_decode(raw, sizeof(raw), &olen, (const uint8_t*)d, dlen) != 0) { fySdWErr("bad base64"); return; }
+  if (fyBakFile.write(raw, olen) != olen) { fySdWErr("write failed (card full?)"); return; }
+  fyBakCrc = fyCRC32Update(fyBakCrc, raw, olen);
+  fyBakLen += olen;
+  fyBakLastN = n;
+  fyPrintAll("{\"event\":\"sd_ack\",\"n\":%lld}\n", n);
+}
+
+static void fySdWClose(const char* line) {
+  if (!fyBakFile) { fySdWErr("not open"); return; }
+  fyBakFile.close();
+  long long len = -1;
+  const char* c; size_t clen;
+  unsigned long crc = 0;
+  if (!fyJsonNum(line, "len", len) || !fyJsonStr(line, "crc", c, clen) || sscanf(c, "0x%lx", &crc) != 1) { fySdWErr("bad close"); return; }
+  if ((uint32_t)len != fyBakLen || (uint32_t)crc != fyBakCrc) { fySdWErr("verify failed"); return; }
+  SD.remove(FY_SD_BAK);
+  if (!SD.rename(FY_SD_TMP, FY_SD_BAK)) { fySdWErr("rename failed"); return; }
+  fyPrintAll("{\"event\":\"sd_wok\",\"len\":%lu,\"crc\":\"0x%08lX\"}\n", (unsigned long)fyBakLen, (unsigned long)fyBakCrc);
+}
+
+static void fySdR(const char* line) {
+  long long off = 0, len = FY_SD_CHUNK;
+  fyJsonNum(line, "off", off);
+  fyJsonNum(line, "len", len);
+  if (len <= 0 || len > FY_SD_CHUNK) len = FY_SD_CHUNK;
+  File f = fySdOk ? SD.open(FY_SD_BAK, FILE_READ) : File();
+  if (!f) { fyPrintAll("{\"event\":\"sd_rd\",\"off\":0,\"size\":0,\"d\":\"\"}\n"); return; }
+  size_t size = f.size();
+  if (off < 0 || (size_t)off > size) off = size;
+  f.seek((size_t)off);
+  static uint8_t raw[FY_SD_CHUNK];
+  size_t n = f.read(raw, (size_t)len);
+  f.close();
+  static unsigned char b64[FY_SD_CHUNK * 4 / 3 + 8];
+  size_t olen = 0;
+  mbedtls_base64_encode(b64, sizeof(b64), &olen, raw, n);
+  fyPrintAll("{\"event\":\"sd_rd\",\"off\":%lld,\"size\":%u,\"n\":%u,\"d\":\"", off, (unsigned)size, (unsigned)n);
+  fyWriteAll(b64, olen);
+  fyWriteAll((const uint8_t*)"\"}\n", 3);
+}
+
+// Returns true if the line was an SD/time command.
+static bool fySdHandle(const char* line) {
+  if (strstr(line, "\"set_time\"")) {
+    long long e = 0;
+    if (fyJsonNum(line, "epoch", e) && e > 1600000000LL) fyEpochBase = e - (long long)(millis() / 1000);
+    fyPrintAll("{\"event\":\"time_ok\",\"boot\":%lu}\n", (unsigned long)fyBootCount);
+    return true;
+  }
+  if (strstr(line, "\"sd_info\""))  { fySdInfo(); return true; }
+  if (strstr(line, "\"sd_dump\"")) {
+    long long from = 0, mx = 400;
+    fyJsonNum(line, "from", from);
+    fyJsonNum(line, "max", mx);
+    fySdDump(from, mx > 0 ? mx : 400);
+    return true;
+  }
+  if (strstr(line, "\"sd_wopen\""))  { fySdWOpen(); return true; }
+  if (strstr(line, "\"sd_wclose\"")) { fySdWClose(line); return true; }
+  if (strstr(line, "\"sd_w\""))      { fySdW(line); return true; }
+  if (strstr(line, "\"sd_r\""))      { fySdR(line); return true; }
+  if (strstr(line, "\"sd_clear_log\"")) { if (fySdOk) SD.remove(FY_SD_LOG); fySdInfo(); return true; }
+  return false;
+}
+#else
+static void fySdInit() {}
+static void fySdLog(const char*, const char*, const char*, uint8_t, int8_t, uint8_t, const char*, const char*) {}
+static void fySdInfo() { fyPrintAll("{\"event\":\"sd_info\",\"ok\":0}\n"); }
+static bool fySdHandle(const char*) { return false; }
+#endif
 
 // ------------------------------------------------------------
 // Session dump over USB (host command "dump_session")
@@ -1176,6 +1458,8 @@ static void emitConfigJSON() {
 
 static void handleCommandLine(const char* line) {
   if (!strstr(line, "\"cmd\"")) return;
+
+  if (fySdHandle(line)) return;   // microSD log / backup / clock commands
 
   if (strstr(line, "\"dump_session\"")) {
     if (strstr(line, "\"prev\"")) fyDumpFileSession(FY_PREV_FILE, "prev");
@@ -1710,6 +1994,9 @@ static void drainAlertQueue() {
     emitDetectionJSON(isBle ? "ble" : "wifi", macStr, method, tier, e.rssi,
                       e.channel, (e.type == ALERT_SSID) ? e.ssid : "",
                       isBle ? e.ssid : "");
+    // Same detection, appended to the microSD log (no-op without a card).
+    fySdLog(isBle ? "ble" : "wifi", macStr, method, tier, e.rssi,
+            e.channel, (e.type == ALERT_SSID) ? e.ssid : "", isBle ? e.ssid : "");
 
     // Audio feedback:
     //   - NEW MAC or confidence upgrade → that tier's signature sound
@@ -1893,10 +2180,16 @@ static void fyBleStart() {
 // ============================================================
 
 void setup() {
+  // Room for 1 KB SD backup chunks from the phone. (The TX buffer is left at
+  // its default: enlarging it held short replies back until the next write.)
+  Serial.setRxBufferSize(4096);
   Serial.begin(115200);
   // Crucial for USB-optional operation: without this, Serial.write() will
   // block indefinitely on an ESP32-S3 USB-CDC port when no host is attached.
-  Serial.setTxTimeoutMs(0);
+  // A short timeout, not 0: with 0 a long reply (SD dump / backup chunk)
+  // overruns the small TX buffer and bytes are silently dropped. With no host
+  // the CDC driver reports "not connected" and returns immediately anyway.
+  Serial.setTxTimeoutMs(20);
   delay(300);
 
 #ifdef BOARD_LILYGO_T_DONGLE_S3
@@ -1941,6 +2234,9 @@ void setup() {
     dualPrintln("[flockyou] SPIFFS init FAILED — running without persistence");
   }
 
+  // microSD on the XIAO Sense board: unlimited detection log + phone backups.
+  fySdInit();
+
   WiFi.mode(WIFI_MODE_NULL);
   wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
   esp_wifi_init(&cfg);
@@ -1975,6 +2271,7 @@ void setup() {
   // Announce the tier config on boot so a dashboard that was already
   // listening picks up the current mute state without having to ask.
   emitConfigJSON();
+  fySdInfo();
 
   lastHeartbeat = millis();
   fyLastSaveAt  = millis();
