@@ -48,9 +48,14 @@ const tests = [
   ['terrain tile from offline cache', 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/10/271/408.png', '200 DEM'],
   ['missing tile returns 504, not a hang', 'https://tiles.openfreemap.org/planet/x/14/1/1.pbf', '504 '],
   ['app shell offline', 'https://nukebox.tailac984b.ts.net/phone/app.js', '200 APP'],
+  // PC up but its server stopped: Tailscale answers 502 — must still open the saved app.
+  ['app shell when the PC server answers 502', 'https://nukebox.tailac984b.ts.net/phone/app.js', '200 APP', 502],
 ];
 let fail = 0;
-for (const [name, url, want] of tests) {
+for (const [name, url, want, httpStatus] of tests) {
+  globalThis.fetch = httpStatus
+    ? async () => ({ ok: false, status: httpStatus, body: 'Bad Gateway', clone() { return this; } })
+    : async () => { throw new TypeError('offline'); };
   const got = await run(url);
   const ok = got === want;
   if (!ok) fail++;

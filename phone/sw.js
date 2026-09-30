@@ -4,7 +4,7 @@
 //    (offline.js) and is never trimmed; 'fy-tiles' is a rolling cache of
 //    whatever you've viewed.
 //  - OpenFreeMap style/TileJSON: network first with a short timeout, cached copy offline.
-const SHELL = 'fy-shell-v11';
+const SHELL = 'fy-shell-v12';
 const TILES = 'fy-tiles-v1';
 const OFFLINE = 'fy-offline';
 const MAX_TILES = 8000;
@@ -71,8 +71,11 @@ self.addEventListener('fetch', e => {
   if (TILE_HOSTS.includes(url.hostname)) { e.respondWith(tileFetch(e.request, url)); return; }
 
   if (url.origin === self.location.origin) {
+    // A server error (e.g. 502 when the PC's server is down) must fall back to
+    // the saved copy too, not just a network failure.
     e.respondWith(withTimeout(fetch(e.request), 6000).then(res => {
-      if (res.ok) caches.open(SHELL).then(c => c.put(e.request, res.clone()));
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      caches.open(SHELL).then(c => c.put(e.request, res.clone()));
       return res;
     }).catch(() => caches.match(e.request, { ignoreSearch: true })
       .then(r => r || caches.match('index.html'))));

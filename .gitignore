@@ -13,3 +13,4 @@ api/data/
 api/exports/
 
 phone/config.local.js
+logs/
