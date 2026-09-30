@@ -387,8 +387,25 @@ async function countRouteTolls(rts) {
   const panel = $('lyrPanel');
   panel.querySelector('.small0').insertAdjacentHTML('beforebegin', `
     <div class="lyr-sub">Places</div>
+    <div class="pset">
+      <button data-pset="all">All</button><button data-pset="none">None</button>
+      <button data-pset="trip">Road trip</button><button data-pset="food">Food</button><button data-pset="fuel">Fuel</button>
+    </div>
     <div class="place-grid">${Object.entries(PLACE_CATS).map(([k, v]) => `
-      <label class="pchip"><input type="checkbox" data-pcat="${k}" ${opts.placeCats[k] ? 'checked' : ''}><span>${v.emoji} ${v.label}</span></label>`).join('')}</div>`);
+      <div class="pchip"><label><input type="checkbox" data-pcat="${k}" ${opts.placeCats[k] ? 'checked' : ''}><span>${v.emoji} ${v.label}</span></label>
+        <button class="ponly" data-only="${k}" title="Show only this">only</button></div>`).join('')}</div>`);
+  const PRESETS = {
+    all: Object.keys(PLACE_CATS), none: [],
+    trip: ['fuel', 'ev', 'rest', 'services', 'toll', 'food', 'fastfood', 'coffee', 'lodging', 'toilets'],
+    food: ['food', 'fastfood', 'coffee'], fuel: ['fuel', 'ev', 'services'],
+  };
+  const setCats = keys => {
+    for (const k of Object.keys(PLACE_CATS)) opts.placeCats[k] = keys.includes(k);
+    panel.querySelectorAll('[data-pcat]').forEach(cb => { cb.checked = !!opts.placeCats[cb.dataset.pcat]; });
+    saveOpts(); renderPlaces();
+  };
+  panel.querySelectorAll('[data-pset]').forEach(b => b.onclick = () => setCats(PRESETS[b.dataset.pset]));
+  panel.querySelectorAll('[data-only]').forEach(b => b.onclick = () => setCats([b.dataset.only]));
   panel.querySelectorAll('[data-pcat]').forEach(cb => cb.onchange = () => { opts.placeCats[cb.dataset.pcat] = cb.checked; saveOpts(); renderPlaces(); });
 
   // Search dropdown: category chips on top; category words jump straight to "nearby".

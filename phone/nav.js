@@ -403,6 +403,8 @@ async function planRoute(silent = false) {
     const fastest = routes.reduce((a, r, i) => r.duration < routes[a].duration ? i : a, 0);
     routes.forEach((r, i) => { r.isFastest = i === fastest; });
     selIdx = fastest;
+    // Corner counts / twistiness (codriver.js) for the "Curviest" choice.
+    if (typeof cdScoreRoutes === 'function') { const c = cdScoreRoutes(routes); if (opts.routePref === 'curvy') selIdx = c; }
     // Show the routes straight away; camera counts fill in once the corridor's
     // camera data is loaded (from cache, or Overpass when online).
     if (!silent) showPreview();
@@ -441,10 +443,12 @@ function showPreview() {
       <div class="rt${i === selIdx ? ' sel' : ''}" data-r="${i}">
         <div><b>${fmtDur(r.duration + (typeof routeDelayAhead === 'function' ? routeDelayAhead(r) : 0))}</b> · ${fmtDist(r.total)}
           ${typeof routeDelayAhead === 'function' && routeDelayAhead(r) >= 60 ? `<span class="chip late">+${fmtDur(routeDelayAhead(r))} traffic</span>` : ''}
-          ${r.isFastest ? '<span class="chip">Fastest</span>' : ''}${r.isFewest ? '<span class="chip ok">Fewest cameras</span>' : ''}</div>
+          ${r.isFastest ? '<span class="chip">Fastest</span>' : ''}${r.isFewest ? '<span class="chip ok">Fewest cameras</span>' : ''}${r.isCurviest ? '<span class="chip curvy">Curviest</span>' : ''}</div>
+        ${r.cornerCount != null ? `<div class="small1 mute">🌀 ${r.cornerCount} corners</div>` : ''}
         <div class="small1">${camSummary(r)}${r.tolls ? ` · <span class="warn">💰 ${r.tolls} toll point${r.tolls === 1 ? '' : 's'}</span>` : r.tolls === 0 ? ' · no tolls' : ''}${r.capped ? ' <span class="mute">(first part of route)</span>' : ''}</div>
       </div>`).join('')}</div>
-    <div class="ns-acts"><button id="nsStart" class="primary">Start</button><button id="nsBack">Back</button></div>`;
+    <div class="ns-acts"><button id="nsStart" class="primary">Start</button>${typeof demoStart === 'function' ? '<button id="nsDemo">Demo</button>' : ''}<button id="nsBack">Back</button></div>`;
+  if ($('nsDemo')) $('nsDemo').onclick = () => demoStart(routes[selIdx]);
   $('nsClose').onclick = clearDest;
   $('nsBack').onclick = () => selectPlace(navDest);
   $('nsStart').onclick = () => startNav(routes[selIdx]);

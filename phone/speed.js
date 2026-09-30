@@ -101,7 +101,9 @@ async function ensureRoads(f) {
 // ---------------------------------------------------------------- map matching
 
 let lastWay = null;
-function matchRoad(f) {
+// `sticky`: prefer the road we were already on (live position). Look-ahead
+// points along a route pass false.
+function matchRoad(f, sticky = true) {
   const i0 = Math.floor(f.lat / ROAD_CELL), j0 = Math.floor(f.lon / ROAD_CELL);
   const P = proj(f.lat), q = P(f.lat, f.lon);
   const moving = f.hdg != null && !Number.isNaN(f.hdg) && (f.spd ?? 0) > 2;
@@ -123,7 +125,7 @@ function matchRoad(f) {
           const diff = w.oneway ? angDiff(brg, f.hdg) : Math.min(angDiff(brg, f.hdg), angDiff((brg + 180) % 360, f.hdg));
           score += diff * 0.4;                 // 90° off ≈ 36 m penalty
         }
-        if (lastWay && w.id === lastWay.id) score -= 8;   // stick to the road we're on
+        if (sticky && lastWay && w.id === lastWay.id) score -= 8;   // stick to the road we're on
         if (score < bs) { bs = score; best = w; }
       }
     }
@@ -170,6 +172,54 @@ async function speedOnFix(f) {
   if (w && typeof ttMaybeLookup === 'function') ttMaybeLookup(f, w);
   paintSpeed(kmh, w);
   checkOver(kmh);
+  speedHintsOnFix();
+}
+
+// ---------------------------------------------------------------- speed-limit changes ahead
+
+opts.speedHints = opts.speedHints ?? true;
+let hintAt = 0, hintRoute = null, hintSaid = new Set();
+
+function pointAlong(rt, s) {
+  if (s > rt.total) return null;
+  let i = 0;
+  while (i < rt.cum.length - 2 && rt.cum[i + 1] < s) i++;
+  const t = (s - rt.cum[i]) / (rt.cum[i + 1] - rt.cum[i] || 1);
+  const [lo0, la0] = rt.coords[i], [lo1, la1] = rt.coords[i + 1];
+  const hdg = (Math.atan2(rt.xy[i + 1][0] - rt.xy[i][0], rt.xy[i + 1][1] - rt.xy[i][1]) * 180 / Math.PI + 360) % 360;
+  return { lat: la0 + (la1 - la0) * t, lon: lo0 + (lo1 - lo0) * t, hdg, spd: 10 };
+}
+
+// While navigating: find where the limit changes along the route ahead.
+function speedHintsOnFix() {
+  const el = $('spdHint');
+  if (!opts.speedHints || !opts.showSpeed || typeof nav === 'undefined' || !nav || !limitNow) { if (el) el.hidden = true; return; }
+  if (Date.now() - hintAt < 2000) return;
+  hintAt = Date.now();
+  const rt = nav.rt;
+  if (hintRoute !== rt) { hintRoute = rt; hintSaid = new Set(); }
+  const ahead = pointAlong(rt, nav.along + 1200);
+  if (ahead) ensureRoads(ahead);
+  let found = null;
+  for (let d = 100; d <= 1600; d += 100) {
+    const p = pointAlong(rt, nav.along + d);
+    if (!p) break;
+    const lim = limitFor(matchRoad(p, false));
+    if (!lim) continue;
+    // Estimates only change with road type; don't announce estimate-to-estimate noise.
+    if (lim.v !== limitNow.v && !(lim.est && limitNow.est)) { found = { d, lim, key: Math.round((nav.along + d) / 200) + ':' + lim.v }; break; }
+  }
+  if (!found) { el.hidden = true; return; }
+  const down = found.lim.v < limitNow.v;
+  el.hidden = false;
+  el.className = down ? 'down' : 'up';
+  el.textContent = `${down ? '↓' : '↑'} ${found.lim.v}${found.lim.est ? '?' : ''} ${found.d <= 150 ? 'now' : 'in ' + fmtDist(found.d)}`;
+  // Say it once per change: slowdowns earlier, increases just before.
+  if (!hintSaid.has(found.key) && found.d <= (down ? 800 : 300)) {
+    hintSaid.add(found.key);
+    if (typeof say === 'function' && opts.navVoice)
+      say(down ? `Speed limit drops to ${found.lim.v} ahead` : `Speed limit rises to ${found.lim.v} ahead`);
+  }
 }
 
 function paintSpeed(kmh, w) {
@@ -210,7 +260,7 @@ function checkOver(kmh) {
     <div id="speedo" ${opts.showSpeed ? '' : 'hidden'}>
       <div class="spd"><b id="spdVal">–</b><span id="spdUnit">mph</span></div>
       <div id="limSign" hidden><span class="lim-top">SPEED<br>LIMIT</span><b id="limVal"></b><span class="lim-est">est.</span></div>
-      <div id="roadName" hidden></div>
+      <div class="spd-side"><div id="spdHint" hidden></div><div id="roadName" hidden></div></div>
     </div>`);
   const card = document.createElement('div');
   card.className = 'card';
@@ -220,9 +270,11 @@ function checkOver(kmh) {
     <label class="sw">Warn when over the limit by
       <select id="optSpeedWarn"><option value="-1">Never</option><option value="0">Any amount</option><option value="5">5</option><option value="10">10</option><option value="15">15</option></select></label>
     <label class="sw"><input type="checkbox" id="optEstLimits"> Estimate the limit when a road has none listed</label>
+    <label class="sw"><input type="checkbox" id="optSpeedHints"> Speed-limit changes ahead (while navigating)</label>
     <p class="mute small1">Limits come from OpenStreetMap, then TomTom if you add a key under Traffic, then a road-type estimate (dashed sign, "est."). Always obey the posted signs.</p>`;
   $('slot-traffic').before(card);
   bindOpt('optShowSpeed', 'showSpeed', () => { $('speedo').hidden = !opts.showSpeed; });
   bindOpt('optSpeedWarn', 'speedWarn');
   bindOpt('optEstLimits', 'estLimits');
+  bindOpt('optSpeedHints', 'speedHints');
 })();

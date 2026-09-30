@@ -117,7 +117,9 @@ let fix = null; // {lat, lon, acc, ts}
 function startGps() {
   if (!('geolocation' in navigator)) { setStat('gpsStat', 'off', 'none'); return; }
   navigator.geolocation.watchPosition(p => {
-    fix = { lat: p.coords.latitude, lon: p.coords.longitude, acc: Math.round(p.coords.accuracy), ts: Date.now(), spd: p.coords.speed, hdg: p.coords.heading };
+    if (window.fyDemo) return;   // a demo drive (codriver.js) is feeding positions
+    fix = { lat: p.coords.latitude, lon: p.coords.longitude, acc: Math.round(p.coords.accuracy), ts: Date.now(),
+      spd: p.coords.speed, hdg: p.coords.heading, alt: p.coords.altitude };
     setStat('gpsStat', 'on', '±' + fix.acc + 'm');
     onFix();
   }, e => {
@@ -167,6 +169,8 @@ function onFix() {
   if (typeof navOnFix === 'function') navOnFix(fix);
   if (typeof speedOnFix === 'function') speedOnFix(fix);
   if (typeof trafficOnFix === 'function') trafficOnFix(fix);
+  if (typeof codriverOnFix === 'function') codriverOnFix(fix);
+  if (typeof drivesOnFix === 'function') drivesOnFix(fix);
   mapChanged();
   if (typeof follow3D === 'function') follow3D();
 }

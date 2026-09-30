@@ -208,8 +208,9 @@ nav button.active { color:var(--accent); font-weight:600; }
 }
 #navBar[hidden] { display:none; }
 .nv-eta { flex:1; min-width:0; }
-.nv-eta b { display:block; font-size:20px; color:var(--ok); }
-.nv-eta span { font-size:13px; color:var(--mute); }
+.nv-eta b { display:block; font-size:20px; color:var(--ok); white-space:nowrap; }
+.nv-eta span { font-size:12px; color:var(--mute); display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+#navBar button { flex:none; }
 .nv-cam { font-size:13px; text-align:right; }
 #nvVoice { font-size:18px; padding:8px 10px; }
 body.navigating .fab.lyr, body.navigating #lyrPanel { display:none; }
@@ -250,7 +251,12 @@ body.navigating .maplibregl-ctrl-top-right { top:120px !important; }
   align-self:center; background:var(--card); border:1px solid var(--line); border-radius:8px; padding:4px 8px;
   font-size:12px; max-width:40vw; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
 }
-body.navigating #speedo { bottom:84px; }
+body.navigating #speedo { bottom:92px; }
+.spd-side { display:flex; flex-direction:column; gap:4px; align-self:center; }
+#spdHint { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:4px 8px; font-size:13px; font-weight:700; white-space:nowrap; }
+#spdHint[hidden] { display:none; }
+#spdHint.down { color:#ff9f0a; border-color:#ff9f0a; }
+#spdHint.up { color:var(--ok); border-color:var(--ok); }
 .inc-ico { font-size:20px; line-height:26px; text-align:center; filter:drop-shadow(0 1px 2px rgba(0,0,0,.6)); }
 .chip.late { background:#b3261e; }
 .nv-eta b.late { color:#ff6b61; }
@@ -273,11 +279,50 @@ body.navigating #speedo { bottom:84px; }
 #navSheet .chips { flex-wrap:wrap; border:0; padding:8px 0; }
 .lyr-sub { font-size:12px; color:var(--mute); margin:8px 0 4px; border-top:1px solid var(--line); padding-top:8px; }
 .place-grid { display:grid; grid-template-columns:1fr 1fr; gap:4px 8px; max-height:34vh; overflow:auto; }
-.pchip { display:flex; align-items:center; gap:6px; font-size:13px; padding:4px 0; }
-.pchip input { width:18px; height:18px; margin:0; }
+.pchip { display:flex; align-items:center; gap:4px; font-size:13px; padding:3px 0; }
+.pchip label { display:flex; align-items:center; gap:6px; flex:1; min-width:0; }
+.pchip input { width:18px; height:18px; margin:0; flex:none; }
+.ponly { padding:2px 6px; font-size:10px; border-radius:6px; color:var(--mute); }
+.pset { display:flex; flex-wrap:wrap; gap:4px; margin-bottom:6px; }
+.pset button { padding:5px 9px; font-size:12px; border-radius:14px; }
 #lyrPanel { max-height:calc(100% - 140px); overflow:auto; }
 #nvFind { font-size:18px; padding:8px 10px; }
 body.navigating #navSheet { bottom:62px; border-radius:16px 16px 0 0; }
+
+/* ---- co-driver ---- */
+#cdStrip {
+  position:absolute; left:8px; right:8px; top:112px; z-index:690; display:flex; gap:6px; overflow:hidden;
+}
+#cdStrip[hidden] { display:none; }
+.cd-c { flex:none; background:rgba(15,17,21,.92); border:1px solid var(--line); border-radius:10px; padding:5px 9px; display:flex; flex-direction:column; align-items:center; min-width:62px; }
+.cd-c b { font-size:17px; }
+.cd-c i { font-size:10px; color:var(--warn); font-style:normal; }
+.cd-c small { font-size:11px; color:var(--mute); }
+.cd-c.s1 b, .cd-c.s0 b { color:#ff453a; } .cd-c.s2 b { color:#ff9f0a; } .cd-c.s3 b { color:#ffd60a; }
+.cd-c.s4 b { color:#d1d1d6; } .cd-c.s5 b, .cd-c.s6 b { color:#8e8e93; }
+#cdStrip.flash .cd-c:first-child { animation:cdflash .8s; }
+@keyframes cdflash { 0% { background:#1a73e8; } 100% { background:rgba(15,17,21,.92); } }
+.chip.curvy { background:#bf5af2; }
+
+/* ---- drives + telemetry ---- */
+#telem { position:absolute; left:10px; top:120px; z-index:630; width:170px; background:rgba(24,27,34,.94); border:1px solid var(--line);
+  border-radius:10px; padding:8px 10px; font-size:12px; pointer-events:none; }
+#telem[hidden] { display:none; }
+.tl-row { display:flex; justify-content:space-between; gap:6px; padding:1px 0; }
+.tl-row span { color:var(--mute); }
+.tl-row small { color:var(--mute); font-weight:400; }
+.tl-g { height:6px; background:#262b36; border-radius:3px; overflow:hidden; margin:3px 0; }
+.tl-g div { height:100%; background:linear-gradient(90deg,#3fb950,#ffd60a,#ff453a); }
+.tl-rec { margin-top:4px; color:var(--mute); }
+.rec-dot { display:inline-block; width:8px; height:8px; border-radius:50%; background:#ff453a; margin-right:5px; animation:blink 1s infinite; }
+@keyframes blink { 50% { opacity:.2; } }
+body.navigating #telem { top:176px; }
+.dev.drive { align-items:center; }
+#driveDetail { position:sticky; bottom:0; }
+#driveDetail canvas { width:100%; height:90px; display:block; background:#0f1115; border-radius:8px; }
+#driveDetail #ddAlt { height:70px; }
+.dd-stats { padding:8px 0; border:0; }
+nav button { font-size:13px; }
 
 /* Night map: invert the light OSM street tiles in 2D, leave markers and satellite alone. */
 body.night .leaflet-tile-pane { filter:invert(1) hue-rotate(180deg) brightness(.85) contrast(.9); }
