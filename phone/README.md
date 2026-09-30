@@ -21,6 +21,7 @@ to the home screen; works with no cell service once set up.
 | `pois.js` | Places: gas, food, rest areas, service plazas, tolls, EV, hotels... find nearby/along route, add stop |
 | `traffic.js` | TomTom live traffic, incidents, alerts, route delays |
 | `config.local.js` | Git-ignored local keys (TomTom). Not committed. |
+| `sd.js` | Board microSD: import the unlimited detection log, back up / restore the whole app via the card |
 | `sw.js` | Service worker: offline app shell and tile caches |
 | `test/sw-offline.test.mjs` | `node test/sw-offline.test.mjs` - offline cache behaviour |
 

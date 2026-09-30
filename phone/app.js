@@ -447,6 +447,8 @@ async function openDevice(d) {
     setTimeout(() => send({ cmd: 'get_config' }), 300);
     // The board keeps what it found while unplugged; pull it in without a tap.
     if (opts.autoPull) setTimeout(() => send({ cmd: 'dump_session', source: 'prev' }), 1200);
+    // Give the board the time (for its SD log) and check its SD card.
+    if (typeof sdOnConnect === 'function') setTimeout(sdOnConnect, 700);
   } catch (e) {
     log('[usb] open failed: ' + e.message);
     toast('USB: ' + e.message);
@@ -500,6 +502,8 @@ function onLine(line) {
   let ev = null;
   if (line[0] === '{') { try { ev = JSON.parse(line); } catch {} }
   if (!ev) { log(line); return; }
+  // Board SD-card replies are handled by sd.js (log dumps stay out of the log view).
+  if (typeof sdOnEvent === 'function' && sdOnEvent(ev)) { if (ev.event !== 'sd_det' && ev.event !== 'sd_ack' && ev.event !== 'sd_rd') log(line); return; }
   switch (ev.event) {
     case 'detection':
       log(line, true);
