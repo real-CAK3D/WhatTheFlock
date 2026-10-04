@@ -1,3 +1,25 @@
+# WhatTheFlock — "What the Flock!"
+
+A phone app + firmware for spotting Flock Safety license-plate cameras (and other
+surveillance) on the road, built on the open-source **[Flock You](https://github.com/colonelpanichacks/flock-you)**
+detector by colonelpanichacks (MIT).
+
+- **Firmware** (`main.cpp`): Flock You on a Seeed XIAO ESP32-S3 Sense, plus microSD logging,
+  phone backups over USB, and optional GPS module support.
+- **Phone app** (`phone/`): installable web app (Chrome/Android) — live board detections over USB,
+  maps (2D/3D/satellite, offline), mapped ALPR/speed cameras, turn-by-turn navigation with
+  camera-aware routes, traffic, weather, places, hazard reports, rally co-driver, HUD, drive recorder.
+  See [`phone/README.md`](phone/README.md).
+- **Android app** (`android-app/`): Capacitor wrapper with native USB serial, background GPS,
+  text-to-speech and notifications; `android-app/build.ps1` builds the APK.
+- **Servers** (`reports/`, `start-servers.ps1`): shared hazard reports and diagnostics.
+
+Keys are not in this repo: put a TomTom key in `phone/config.local.js` (git-ignored) or in the app's
+Settings → Traffic.
+
+---
+
+# Original Flock You README
 # Flock-You: Promiscuous WiFi Edition
 
 <img src="flock.png" alt="Flock You" width="300px">
