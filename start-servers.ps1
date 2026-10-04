@@ -1,4 +1,4 @@
-# Starts the Flock You servers that Tailscale forwards to:
+# Starts the What the Flock! servers that Tailscale forwards to:
 #   127.0.0.1:8088  phone app (served at https://<pc>.ts.net/phone/)
 #   127.0.0.1:5000  original Flock You Flask dashboard (https://<pc>.ts.net/)
 #   127.0.0.1:8090  shared hazard/police reports (https://<pc>.ts.net/reports/)

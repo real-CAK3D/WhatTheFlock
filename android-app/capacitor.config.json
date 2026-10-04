@@ -1,6 +1,6 @@
 {
   "appId": "com.cak3d.flockyou",
-  "appName": "Flock You",
+  "appName": "What the Flock!",
   "webDir": "www",
   "server": { "androidScheme": "https" },
   "android": {

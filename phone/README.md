@@ -1,4 +1,6 @@
-# Flock You Mobile
+# What the Flock!
+
+Phone app for the Flock You detector (formerly "Flock You Mobile").
 
 A phone web app (Chrome on Android) that talks to the XIAO ESP32-S3 over USB-C
 (WebUSB), tags every detection with the phone's GPS, and maps it. Installable

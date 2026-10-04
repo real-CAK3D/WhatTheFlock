@@ -1,5 +1,5 @@
 'use strict';
-// Flock You Mobile — reads the XIAO ESP32-S3 over WebUSB (CDC-ACM), tags each
+// What the Flock! (Flock You mobile) — reads the XIAO ESP32-S3 over WebUSB (CDC-ACM), tags each
 // detection with this phone's GPS, and keeps everything in localStorage.
 // Wire protocol (see ../main.cpp): one JSON object per line.
 //   device -> phone: {"event":"detection",...}, {"event":"config",...},
@@ -11,6 +11,8 @@ const ESPRESSIF_VID = 0x303a;
 const MAX_HITS = 10000;
 const MAX_TRACK = 5000;
 const GPS_STALE_MS = 30000;
+const GPS_MAX_AGE_MS = 30000;   // ignore positions older than this (cached "last known")
+const GPS_MAX_ACC_M = 100;      // ignore very rough (cell/Wi-Fi/IP) positions
 const STORE_KEY = 'fy.data.v1';
 const OPT_KEY = 'fy.opts.v1';
 const TIER_NAMES = {
@@ -118,7 +120,15 @@ function startGps() {
   if (!('geolocation' in navigator)) { setStat('gpsStat', 'off', 'none'); return; }
   navigator.geolocation.watchPosition(p => {
     if (window.fyDemo) return;   // a demo drive (codriver.js) is feeding positions
-    fix = { lat: p.coords.latitude, lon: p.coords.longitude, acc: Math.round(p.coords.accuracy), ts: Date.now(),
+    // Android hands over its *last known* location first, which can be days old
+    // and hundreds of miles away (it showed Auburn, ME from Lake George, NY).
+    // Use the reading's own timestamp and skip stale or very rough fixes.
+    const age = p.timestamp ? Date.now() - p.timestamp : 0;
+    if (age > GPS_MAX_AGE_MS || p.coords.accuracy > GPS_MAX_ACC_M) {
+      if (!fix || Date.now() - fix.ts > GPS_STALE_MS) setStat('gpsStat', 'stale', 'waiting');
+      return;
+    }
+    fix = { lat: p.coords.latitude, lon: p.coords.longitude, acc: Math.round(p.coords.accuracy), ts: Date.now() - Math.max(0, age),
       spd: p.coords.speed, hdg: p.coords.heading, alt: p.coords.altitude };
     setStat('gpsStat', 'on', '±' + fix.acc + 'm');
     onFix();
@@ -211,30 +221,39 @@ function mapChanged() {
 
 // ---------------------------------------------------------------- detections
 
+// source: 'live' (USB, now), 'sd' (one line of the board's SD log, imported
+// once each, with its own time/location when known: ev._ts, ev._loc) or
+// 'board' (the board's small session summary, which repeats on every pull).
 function ingestDetection(ev, source = 'live') {
   const mac = (ev.mac_address || ev.mac || '').toLowerCase();
   if (!mac) return;
-  const now = Date.now();
+  const now = ev._ts || Date.now();
   const tier = Number(ev.detection_tier ?? ev.tier ?? 0);
   const method = ev.detection_method || ev.method || 'unknown';
   const rssi = Number(ev.rssi ?? -127);
-  const loc = source === 'live' ? currentFix() : null;
+  // Live: the phone's GPS, or the board's own GPS module if the phone has no fix.
+  const boardLoc = ev.lat != null && ev.lon != null ? { lat: Number(ev.lat), lon: Number(ev.lon), acc: 10 } : null;
+  const loc = source === 'live' ? (currentFix() || boardLoc) : source === 'sd' ? (ev._loc || null) : null;
 
   let d = data.devices[mac];
   const isNew = !d;
   if (!d) {
     d = data.devices[mac] = {
       mac, oui: ev.oui || mac.slice(0, 8), tier, method, methods: {}, hits: 0,
-      first: now, last: now, bestRssi: -127, bestLoc: null, lastLoc: null,
+      first: null, last: null, bestRssi: -127, bestLoc: null, lastLoc: null,
       ssid: '', name: '', protocol: ev.protocol || '', source,
     };
   }
-  // Re-pulling the same board session must not inflate counts.
-  if (source !== 'live' && !isNew) { save(); return; }
-  d.hits += source === 'live' ? 1 : Number(ev.count || 1);
-  d.methods[method] = (d.methods[method] || 0) + (source === 'live' ? 1 : Number(ev.count || 1));
+  // Re-pulling the same board session summary must not inflate counts.
+  // (SD log lines are imported once each, so they always count.)
+  if (source === 'board' && !isNew) { save(); return; }
+  const count = source === 'board' ? Number(ev.count || 1) : 1;
+  d.hits += count;
+  d.methods[method] = (d.methods[method] || 0) + count;
   if (tier > d.tier || (tier === d.tier && d.method === 'unknown')) { d.tier = tier; d.method = method; }
-  d.last = now;
+  // A sighting with an unknown time (board log, clock never set) doesn't move first/last seen.
+  const timeKnown = source !== 'sd' || !!ev._ts;
+  if (timeKnown) { d.first = d.first ? Math.min(d.first, now) : now; d.last = d.last ? Math.max(d.last, now) : now; }
   if (ev.ssid) d.ssid = ev.ssid;
   if (ev.device_name) d.name = ev.device_name;
   if (ev.protocol) d.protocol = ev.protocol;
@@ -245,10 +264,11 @@ function ingestDetection(ev, source = 'live') {
   }
   if (rssi > d.bestRssi) d.bestRssi = rssi;
 
-  if (source === 'live') {
+  if (source === 'live' || (source === 'sd' && loc)) {
     data.hits.push({
-      ts: now, mac, method, tier, rssi, ch: ev.channel ?? null,
+      ts: now, mac, method, tier, rssi, ch: ev.channel ?? ev.ch ?? null,
       lat: loc ? +loc.lat.toFixed(6) : null, lon: loc ? +loc.lon.toFixed(6) : null, acc: loc ? loc.acc : null,
+      ...(source === 'sd' ? { src: 'sd' } : {}),
     });
     if (data.hits.length > MAX_HITS) data.hits.splice(0, data.hits.length - MAX_HITS);
   }
@@ -623,7 +643,7 @@ function exportCsv() {
   const rows = [['mac', 'oui', 'tier', 'method', 'methods', 'hits', 'best_rssi', 'lat', 'lon', 'accuracy_m', 'first_seen', 'last_seen', 'ssid', 'name', 'protocol', 'source']];
   for (const d of Object.values(data.devices)) {
     rows.push([d.mac, d.oui, d.tier, d.method, Object.entries(d.methods).map(([k, v]) => k + ':' + v).join(' '), d.hits, d.bestRssi,
-      d.bestLoc?.lat, d.bestLoc?.lon, d.bestLoc?.acc, new Date(d.first).toISOString(), new Date(d.last).toISOString(), d.ssid, d.name, d.protocol, d.source]);
+      d.bestLoc?.lat, d.bestLoc?.lon, d.bestLoc?.acc, d.first ? new Date(d.first).toISOString() : '', d.last ? new Date(d.last).toISOString() : '', d.ssid, d.name, d.protocol, d.source]);
   }
   download(`flockyou-cameras-${stamp()}.csv`, 'text/csv', rows.map(r => r.map(csvCell).join(',')).join('\n'));
 }
@@ -638,11 +658,11 @@ function exportKml() {
   const styles = Object.entries(colors).map(([t, c]) =>
     `<Style id="t${t}"><IconStyle><color>${c}</color><scale>1.1</scale><Icon><href>http://maps.google.com/mapfiles/kml/shapes/placemark_circle.png</href></Icon></IconStyle></Style>`).join('');
   const pms = Object.values(data.devices).filter(d => d.bestLoc).map(d =>
-    `<Placemark><name>${x(d.mac)} (T${d.tier})</name><styleUrl>#t${d.tier}</styleUrl><description>${x(d.method)}; ${d.hits} hits; best ${d.bestRssi} dBm; last ${x(new Date(d.last).toISOString())}${d.ssid ? '; SSID ' + x(d.ssid) : ''}</description><Point><coordinates>${d.bestLoc.lon},${d.bestLoc.lat},0</coordinates></Point></Placemark>`).join('');
+    `<Placemark><name>${x(d.mac)} (T${d.tier})</name><styleUrl>#t${d.tier}</styleUrl><description>${x(d.method)}; ${d.hits} hits; best ${d.bestRssi} dBm; last ${d.last ? x(new Date(d.last).toISOString()) : 'unknown'}${d.ssid ? '; SSID ' + x(d.ssid) : ''}</description><Point><coordinates>${d.bestLoc.lon},${d.bestLoc.lat},0</coordinates></Point></Placemark>`).join('');
   const route = data.track.length > 1
     ? `<Placemark><name>Route</name><LineString><tessellate>1</tessellate><coordinates>${data.track.map(p => p.lon + ',' + p.lat + ',0').join(' ')}</coordinates></LineString></Placemark>` : '';
   download(`flockyou-${stamp()}.kml`, 'application/vnd.google-earth.kml+xml',
-    `<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>Flock You</name>${styles}${pms}${route}</Document></kml>`);
+    `<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>What the Flock!</name>${styles}${pms}${route}</Document></kml>`);
 }
 function exportJson() {
   download(`flockyou-backup-${stamp()}.json`, 'application/json', JSON.stringify({ app: 'flockyou-mobile', v: 1, opts, ...data }));
@@ -655,7 +675,7 @@ $('importFile').onchange = async e => {
   if (!f) return;
   try {
     const d = JSON.parse(await f.text());
-    if (!d.devices) throw new Error('not a Flock You backup');
+    if (!d.devices) throw new Error('not a What the Flock! backup');
     // Merge: keep whichever copy of each device saw more hits.
     for (const [mac, dv] of Object.entries(d.devices)) {
       const cur = data.devices[mac];

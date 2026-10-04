@@ -1,4 +1,4 @@
-"""Shared hazard / police reports for Flock You Mobile (Waze-style).
+"""Shared hazard / police reports for What the Flock! (Waze-style).
 
 Tiny stdlib-only HTTP server; phones reach it through Tailscale
 (`tailscale serve --set-path /reports http://127.0.0.1:8090`), so only

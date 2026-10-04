@@ -46,7 +46,7 @@ async function setupItems() {
       act: async () => { if (installEvt) { installEvt.prompt(); await installEvt.userChoice; installEvt = null; } else toast('Chrome ⋮ menu → Add to Home screen'); } },
     { id: 'notif', key: false, title: 'Notifications',
       ok: notif === 'granted', state: notif === 'granted' ? 'Allowed' : notif === 'denied' ? 'Blocked' : notif === 'unsupported' ? 'Not supported' : 'Not asked yet',
-      help: notif === 'denied' ? 'Blocked. Android Settings → Apps → Chrome (or Flock You) → Notifications.' : 'Alerts you when a camera is found while you are in another app.',
+      help: notif === 'denied' ? 'Blocked. Android Settings → Apps → Chrome (or What the Flock!) → Notifications.' : 'Alerts you when a camera is found while you are in another app.',
       btn: notif === 'default' ? 'Allow' : null, act: () => Notification.requestPermission() },
     { id: 'sound', key: false, title: 'Sound',
       ok: soundOk, state: soundOk ? 'Ready' : 'Tap Test once to enable',

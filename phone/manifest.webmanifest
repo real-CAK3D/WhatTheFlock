@@ -1,6 +1,6 @@
 {
-  "name": "Flock You Mobile",
-  "short_name": "Flock You",
+  "name": "What the Flock!",
+  "short_name": "What the Flock!",
   "start_url": "/phone/",
   "scope": "/phone/",
   "display": "standalone",

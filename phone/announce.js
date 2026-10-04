@@ -84,7 +84,7 @@ function announce(cat, text, o = {}) {
   if (c.voice && (!opts.muted || cat === 'directions') && (cat !== 'directions' || opts.navVoice)) {
     annEnqueue({ cat, text, prio: ANN_CATS[cat]?.prio ?? 1, rate: o.rate, at: Date.now() });
   }
-  if (c.notify && typeof notify === 'function') notify(o.title || ANN_CATS[cat]?.label || 'Flock You', o.body || text, o.tag || 'fy-' + cat);
+  if (c.notify && typeof notify === 'function') notify(o.title || ANN_CATS[cat]?.label || 'What the Flock!', o.body || text, o.tag || 'fy-' + cat);
 }
 
 // Route the older speaking functions through the queue.

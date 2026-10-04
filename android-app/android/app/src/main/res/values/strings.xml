@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">Flock You</string>
-    <string name="title_activity_main">Flock You</string>
+    <string name="app_name">What the Flock!</string>
+    <string name="title_activity_main">What the Flock!</string>
     <string name="package_name">com.cak3d.flockyou</string>
     <string name="custom_url_scheme">com.cak3d.flockyou</string>
     <!-- Persistent notification while running in the background (background-geolocation plugin). -->

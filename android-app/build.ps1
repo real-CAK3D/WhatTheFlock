@@ -1,6 +1,7 @@
-# Builds the Flock You Android app (debug-signed APK, for sideloading).
+# Builds the What the Flock! Android app (debug-signed APK, for sideloading).
 #   powershell -ExecutionPolicy Bypass -File G:\flock-you\android-app\build.ps1
-# Output: G:\flock-you\FlockYou.apk
+# Output: G:\flock-you\WhatTheFlock.apk, also published for download from the phone at
+#   https://<pc>.ts.net/phone/download/WhatTheFlock.apk  (and the old FlockYou.apk link)
 # Everything (JDK, SDK, Gradle and npm caches) lives on G:.
 $ErrorActionPreference = 'Stop'
 $root = 'G:\flock-you'; $app = "$root\android-app"; $www = "$app\www"
@@ -28,8 +29,9 @@ Push-Location "$app\android"
 .\gradlew.bat assembleDebug --no-daemon -q
 Pop-Location; Pop-Location
 
-Copy-Item "$app\android\app\build\outputs\apk\debug\app-debug.apk" "$root\FlockYou.apk" -Force
-# Also publish it for download from the phone: https://<pc>.ts.net/phone/download/FlockYou.apk
+# 3. Outputs. Same appId as before, so it installs over the old app and keeps its data.
+Copy-Item "$app\android\app\build\outputs\apk\debug\app-debug.apk" "$root\WhatTheFlock.apk" -Force
 New-Item -ItemType Directory -Force "$root\phone\download" | Out-Null
-Copy-Item "$root\FlockYou.apk" "$root\phone\download\FlockYou.apk" -Force
-Get-Item "$root\FlockYou.apk" | Select-Object FullName, @{ n = 'MB'; e = { [math]::Round($_.Length / 1MB, 1) } }
+Copy-Item "$root\WhatTheFlock.apk" "$root\phone\download\WhatTheFlock.apk" -Force
+Copy-Item "$root\WhatTheFlock.apk" "$root\phone\download\FlockYou.apk" -Force   # old link keeps working
+Get-Item "$root\WhatTheFlock.apk" | Select-Object FullName, @{ n = 'MB'; e = { [math]::Round($_.Length / 1MB, 1) } }

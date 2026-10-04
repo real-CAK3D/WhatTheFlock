@@ -230,7 +230,7 @@ function showDriveOnMap(d) {
 function exportDriveGpx(d) {
   const pts = d.pts.map(p => `<trkpt lat="${p.lat}" lon="${p.lon}">${p.alt != null ? `<ele>${p.alt}</ele>` : ''}<time>${new Date(p.t).toISOString()}</time><extensions><speed>${p.v}</speed></extensions></trkpt>`).join('');
   download(`drive-${new Date(d.start).toISOString().slice(0, 16).replace(/[T:]/g, '-')}.gpx`, 'application/gpx+xml',
-    `<?xml version="1.0" encoding="UTF-8"?><gpx version="1.1" creator="Flock You Mobile" xmlns="http://www.topografix.com/GPX/1/1"><trk><name>${esc(d.name)}</name><trkseg>${pts}</trkseg></trk></gpx>`);
+    `<?xml version="1.0" encoding="UTF-8"?><gpx version="1.1" creator="What the Flock!" xmlns="http://www.topografix.com/GPX/1/1"><trk><name>${esc(d.name)}</name><trkseg>${pts}</trkseg></trk></gpx>`);
 }
 
 // ---------------------------------------------------------------- UI

@@ -1002,8 +1002,75 @@ static void fyPromotePrevSession() {
 // and extracts these fields:  mac_address, rssi, channel, frequency, ssid,
 // device_name, gps.latitude, gps.longitude, gps.accuracy.
 //
-// GPS is handled Flask-side via its own USB NMEA puck or browser geolocation;
-// we don't embed GPS here because there's no on-device AP / phone link.
+// GPS is normally handled host-side (Flask NMEA puck, or the phone app's GPS).
+// For standalone runs an optional GPS module can be wired to the board, below.
+
+// ============================================================
+// OPTIONAL GPS MODULE  (ATGM336H / NEO-6M / NEO-M8N, 9600 baud NMEA)
+// ============================================================
+// Wiring (XIAO ESP32-S3 Sense):  module TX -> D1 (GPIO2),  module RX -> D0 (GPIO1, optional),
+//                                VCC -> 3V3,  GND -> GND.
+// With a fix, every detection (USB and the SD log) carries "lat"/"lon", and the
+// board's clock is set from GPS UTC so SD sightings get real timestamps even
+// when no phone ever connects. Without a module nothing changes.
+#ifndef USE_GPS
+#define USE_GPS 1
+#endif
+#define GPS_RX_PIN   2      // D1: receives the module's TX
+#define GPS_TX_PIN   1      // D0: to the module's RX (only for configuring it)
+#define GPS_BAUD     9600
+#define GPS_MAX_AGE  5000   // ms: older positions aren't attached to detections
+
+static long long fyEpochBase = 0;     // epoch seconds at millis()==0; 0 = not known yet (phone or GPS sets it)
+
+#if USE_GPS
+#include <TinyGPSPlus.h>
+static TinyGPSPlus    fyGps;
+static HardwareSerial fyGpsSerial(2);
+static bool           fyGpsSeen = false;   // any valid NMEA sentence received
+
+// Days since 1970-01-01 for a civil date (Howard Hinnant's algorithm).
+static long long fyDaysFromCivil(int y, unsigned m, unsigned d) {
+  y -= m <= 2;
+  const long long era = (y >= 0 ? y : y - 399) / 400;
+  const unsigned yoe = (unsigned)(y - era * 400);
+  const unsigned doy = (153 * (m + (m > 2 ? -3 : 9)) + 2) / 5 + d - 1;
+  const unsigned doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+  return era * 146097 + (long long)doe - 719468;
+}
+
+static void fyGpsInit() { fyGpsSerial.begin(GPS_BAUD, SERIAL_8N1, GPS_RX_PIN, GPS_TX_PIN); }
+
+static void fyGpsTick() {
+  while (fyGpsSerial.available() > 0) if (fyGps.encode(fyGpsSerial.read())) fyGpsSeen = true;
+  // No phone has set the clock this boot: take UTC from the satellites.
+  if (!fyEpochBase && fyGps.date.isValid() && fyGps.time.isValid() && fyGps.date.year() >= 2024 && fyGps.time.age() < 1500) {
+    long long e = fyDaysFromCivil(fyGps.date.year(), fyGps.date.month(), fyGps.date.day()) * 86400LL
+                + fyGps.time.hour() * 3600LL + fyGps.time.minute() * 60LL + fyGps.time.second();
+    fyEpochBase = e - (long long)(millis() / 1000);
+    dualPrintf("[flockyou] clock set from GPS: %lld\n", e);
+  }
+}
+
+static bool fyGpsFix(double& lat, double& lon, float& hdop, int& sats) {
+  if (!fyGps.location.isValid() || fyGps.location.age() > GPS_MAX_AGE) return false;
+  lat = fyGps.location.lat(); lon = fyGps.location.lng();
+  hdop = fyGps.hdop.isValid() ? fyGps.hdop.hdop() : 99.0f;
+  sats = fyGps.satellites.isValid() ? (int)fyGps.satellites.value() : 0;
+  return true;
+}
+#else
+static void fyGpsInit() {}
+static void fyGpsTick() {}
+static bool fyGpsFix(double&, double&, float&, int&) { return false; }
+#endif
+
+// ',"lat":..,"lon":..,"hdop":..,"sats":..' when there's a fresh fix, else "".
+static void fyGpsJson(char* out, size_t cap) {
+  double lat, lon; float hdop; int sats;
+  if (fyGpsFix(lat, lon, hdop, sats)) snprintf(out, cap, ",\"lat\":%.6f,\"lon\":%.6f,\"hdop\":%.1f,\"sats\":%d", lat, lon, hdop, sats);
+  else out[0] = '\0';
+}
 
 static void emitDetectionJSON(const char* proto, const char* mac, const char* method,
                               uint8_t tier, int8_t rssi, uint8_t ch,
@@ -1022,6 +1089,9 @@ static void emitDetectionJSON(const char* proto, const char* mac, const char* me
   // "wifi_2_4ghz" value for WiFi hits. BLE adverts have no WiFi channel, so
   // channel arrives as 0xFF and frequency reports 0.
   const char* protocol = (strcmp(proto, "wifi") == 0) ? "wifi_2_4ghz" : "ble";
+  // Board GPS position when a module is fitted and has a fix (else empty).
+  char gpsJson[96];
+  fyGpsJson(gpsJson, sizeof(gpsJson));
   dualPrintf(
       "{\"event\":\"detection\","
       "\"detection_method\":\"%s_%s\","
@@ -1033,9 +1103,9 @@ static void emitDetectionJSON(const char* proto, const char* mac, const char* me
       "\"rssi\":%d,"
       "\"channel\":%u,"
       "\"frequency\":%u,"
-      "\"ssid\":\"%s\"}\n",
+      "\"ssid\":\"%s\"%s}\n",
       proto, method, (unsigned)tier, protocol, mac, oui, nameEsc, rssi,
-      (unsigned)ch, (unsigned)channelFreqMhz(ch), ssidEsc);
+      (unsigned)ch, (unsigned)channelFreqMhz(ch), ssidEsc, gpsJson);
 }
 
 // ============================================================
@@ -1169,7 +1239,6 @@ static const char* FY_SD_LOG = "/flockyou/detections.jsonl";
 static const char* FY_SD_BAK = "/flockyou/backup.json";
 static const char* FY_SD_TMP = "/flockyou/backup.tmp";
 static uint32_t fyBootCount = 0;
-static long long fyEpochBase = 0;     // epoch seconds at millis()==0; 0 = not known yet
 static File      fyBakFile;
 static uint32_t  fyBakCrc = 0, fyBakLen = 0;
 static long long fyBakLastN = -1;     // last chunk written; a resend of it is just re-acked
@@ -1209,10 +1278,12 @@ static void fySdLog(const char* proto, const char* mac, const char* method, uint
   jsonEscape(nameEsc, sizeof(nameEsc), devName ? devName : "");
   unsigned long ms = millis();
   long long t = fyEpochBase ? fyEpochBase + (long long)(ms / 1000) : 0;
+  char gpsJson[96];
+  fyGpsJson(gpsJson, sizeof(gpsJson));   // lat/lon when a GPS module has a fix
   f.printf("{\"t\":%lld,\"ms\":%lu,\"boot\":%lu,\"mac\":\"%s\",\"method\":\"%s_%s\",\"tier\":%u,"
-           "\"rssi\":%d,\"ch\":%u,\"ssid\":\"%s\",\"name\":\"%s\"}\n",
+           "\"rssi\":%d,\"ch\":%u,\"ssid\":\"%s\",\"name\":\"%s\"%s}\n",
            t, ms, (unsigned long)fyBootCount, mac, proto, method, (unsigned)tier, rssi,
-           (unsigned)ch, ssidEsc, nameEsc);
+           (unsigned)ch, ssidEsc, nameEsc, gpsJson);
   f.close();
 }
 
@@ -1226,11 +1297,20 @@ static size_t fySdFileSize(const char* path) {
 
 static void fySdInfo() {
   if (!fySdOk) { fyPrintAll("{\"event\":\"sd_info\",\"ok\":0}\n"); return; }
+  double lat, lon; float hdop; int sats = 0;
+  bool fixNow = fyGpsFix(lat, lon, hdop, sats);
+#if USE_GPS
+  const int gpsSeen = fyGpsSeen ? 1 : 0;
+#else
+  const int gpsSeen = 0;
+#endif
   fyPrintAll("{\"event\":\"sd_info\",\"ok\":1,\"card_mb\":%llu,\"total_mb\":%llu,\"used_mb\":%llu,"
-             "\"log_bytes\":%u,\"backup_bytes\":%u,\"boot\":%lu,\"time_set\":%d}\n",
+             "\"log_bytes\":%u,\"backup_bytes\":%u,\"boot\":%lu,\"time_set\":%d,\"ms\":%lu,"
+             "\"gps\":%d,\"gps_fix\":%d,\"sats\":%d}\n",
              SD.cardSize() / (1024ULL * 1024ULL), SD.totalBytes() / (1024ULL * 1024ULL),
              SD.usedBytes() / (1024ULL * 1024ULL), (unsigned)fySdFileSize(FY_SD_LOG),
-             (unsigned)fySdFileSize(FY_SD_BAK), (unsigned long)fyBootCount, fyEpochBase ? 1 : 0);
+             (unsigned)fySdFileSize(FY_SD_BAK), (unsigned long)fyBootCount, fyEpochBase ? 1 : 0,
+             (unsigned long)millis(), gpsSeen, fixNow ? 1 : 0, sats);
 }
 
 // Stream up to `maxLines` log lines starting at byte offset `from`.
@@ -1331,7 +1411,9 @@ static bool fySdHandle(const char* line) {
   if (strstr(line, "\"set_time\"")) {
     long long e = 0;
     if (fyJsonNum(line, "epoch", e) && e > 1600000000LL) fyEpochBase = e - (long long)(millis() / 1000);
-    fyPrintAll("{\"event\":\"time_ok\",\"boot\":%lu}\n", (unsigned long)fyBootCount);
+    // "ms" lets the phone date earlier sightings from this same power-up
+    // (logged before the clock was set: t=0 but ms/boot are known).
+    fyPrintAll("{\"event\":\"time_ok\",\"boot\":%lu,\"ms\":%lu}\n", (unsigned long)fyBootCount, (unsigned long)millis());
     return true;
   }
   if (strstr(line, "\"sd_info\""))  { fySdInfo(); return true; }
@@ -2236,6 +2318,8 @@ void setup() {
 
   // microSD on the XIAO Sense board: unlimited detection log + phone backups.
   fySdInit();
+  // Optional GPS module on D1 (positions + UTC for standalone runs).
+  fyGpsInit();
 
   WiFi.mode(WIFI_MODE_NULL);
   wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
@@ -2284,6 +2368,7 @@ void setup() {
 void loop() {
   updateChannelMode();
   pollHostCommands();  // dashboard → device (per-tier beep mute)
+  fyGpsTick();         // optional GPS module: parse NMEA, set clock from UTC
   drainAlertQueue();   // Serial.printf happens here, not in callback
   autosaveTick();      // periodic SPIFFS write if dirty
   heartbeatTick();     // audible beep-pair while a target is still in range

@@ -4,7 +4,7 @@
 //    (offline.js) and is never trimmed; 'fy-tiles' is a rolling cache of
 //    whatever you've viewed.
 //  - OpenFreeMap style/TileJSON: network first with a short timeout, cached copy offline.
-const SHELL = 'fy-shell-v17';
+const SHELL = 'fy-shell-v18';
 const TILES = 'fy-tiles-v1';
 const OFFLINE = 'fy-offline';
 const MAX_TILES = 8000;

@@ -130,7 +130,7 @@
     // Android 13+: the persistent "running" notification needs this permission.
     LN.requestPermissions().catch(() => {});
     BG.addWatcher({
-      backgroundTitle: 'Flock You is running',
+      backgroundTitle: 'What the Flock! is running',
       backgroundMessage: 'Watching for cameras and guiding you. Tap to open.',
       requestPermissions: true, stale: false, distanceFilter: 0,
     }, (loc, err) => {

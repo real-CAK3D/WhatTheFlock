@@ -414,6 +414,18 @@ body.navigating .fab.quickfab { bottom:324px; }
 .set-tabs button.on { background:var(--accent); color:#000; border-color:var(--accent); font-weight:600; }
 #tab-set .card[hidden] { display:none; }
 
+/* ---- board log ---- */
+.list-seg { margin:10px 12px 0; }
+#tab-list .toolbar[hidden], #trip[hidden], #devList[hidden], #boardLog[hidden] { display:none; }
+.bl-acts { display:flex; flex-wrap:wrap; gap:6px; padding:10px 12px 4px; }
+.bl-group { border-top:1px solid var(--line); margin-top:8px; }
+.bl-head { padding:10px 12px 6px; font-size:13px; }
+.bl-row { display:grid; grid-template-columns:62px 24px 1fr auto; gap:8px; align-items:center; padding:7px 12px; border-top:1px solid var(--line); font-size:12px; }
+.bl-row.loc { cursor:pointer; }
+.bl-t { font-variant-numeric:tabular-nums; color:var(--mute); }
+.bl-m code { font-size:12px; }
+.bl-l { text-align:right; font-size:11px; }
+
 /* ---- weather ---- */
 .stat.wx { cursor:pointer; font-weight:600; }
 .stat.wx.bad { color:var(--warn); }
