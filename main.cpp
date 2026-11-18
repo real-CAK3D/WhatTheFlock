@@ -404,6 +404,11 @@ typedef struct __attribute__((packed)) {
 // Dual-output: prints to both Serial (USB) and Serial1 (GPIO43)
 static char _dualBuf[384];
 
+// Forward decl: wireless BLE mirror of the host JSON link (defined below, in the
+// BLE GATT bridge section). Every byte we print to USB is also offered to it, so
+// the Flying Flocks app gets the identical stream whether tethered or over BLE.
+static void wtfBleEnqueue(const uint8_t* p, size_t n);
+
 static void dualPrintf(const char* fmt, ...) __attribute__((format(printf, 1, 2)));
 static void dualPrintf(const char* fmt, ...) {
   va_list args;
@@ -412,6 +417,7 @@ static void dualPrintf(const char* fmt, ...) {
   va_end(args);
   if (n > 0) {
     Serial.write(_dualBuf, n);
+    wtfBleEnqueue((const uint8_t*)_dualBuf, (size_t)n);
 #if MIRROR_SERIAL
     Serial1.write(_dualBuf, n);
 #endif
@@ -1172,6 +1178,7 @@ static void fySaveBeepMask() {
 // it also means a big burst (SD dump / backup read) can overflow the TX
 // buffer and silently lose bytes. Retry briefly until everything is out.
 static void fyWriteAll(const uint8_t* p, size_t n) {
+  wtfBleEnqueue(p, n);   // mirror the full buffer to BLE before the USB drain mutates p/n
   unsigned long t0 = millis();
   while (n) {
     size_t w = Serial.write(p, n);
@@ -2244,8 +2251,165 @@ class FYBleCallbacks : public NimBLEAdvertisedDeviceCallbacks {
 };
 static FYBleCallbacks fyBleCb;
 
-static void fyBleStart() {
+// ============================================================
+// BLE GATT BRIDGE  — wireless twin of the USB host link
+// ============================================================
+//
+// The What the Flock dongle normally talks to the Flying Flocks app over USB
+// CDC: newline-delimited JSON out ({"event":"detection",...}, config, sd_info),
+// {"cmd":...} JSON in. This bridge stands up a tiny GATT peripheral that mirrors
+// that exact byte stream over BLE, so the app can connect wirelessly — like any
+// other fleet board — with the USB link left fully working in parallel.
+//
+//   service   f10c0001-...   (the app filters on this; its own WTF source)
+//   TX notify f10c0002-...   device -> app : every USB JSON line, verbatim
+//   RX write  f10c0003-...   app -> device : {"cmd":...} lines, same handler
+//
+// Output is pushed into a ring buffer from whatever task printed it (WiFi/BLE
+// callbacks drain through loop()'s drainAlertQueue, but dualPrintf is also
+// called elsewhere), then notified out in loop() at the negotiated MTU. Input
+// is rung in from the NimBLE host task and parsed in loop() by the same
+// handleCommandLine() the USB reader uses. Shares the radio with the WiFi
+// sniffer + passive Flock scan already running (observer + peripheral roles).
+#define WTF_BLE_NAME "WhatTheFlock"
+#define WTF_BLE_SVC  "f10c0001-9b1d-4b7a-8e2a-7c0ffee5f10c"
+#define WTF_BLE_TX   "f10c0002-9b1d-4b7a-8e2a-7c0ffee5f10c"   // device -> app (notify)
+#define WTF_BLE_RX   "f10c0003-9b1d-4b7a-8e2a-7c0ffee5f10c"   // app -> device (write)
+
+static NimBLEServer*         wtfBleServer = nullptr;
+static NimBLECharacteristic* wtfBleTx     = nullptr;
+static volatile bool         wtfBleConnected = false;
+static volatile bool         wtfBleReady     = false;   // central subscribed to TX (CCCD)
+static volatile uint16_t     wtfBleMtu       = 23;
+
+// TX ring: producer = any task via dualPrintf/fyWriteAll; consumer = loop().
+// On overflow we drop the OLDEST bytes — a live sightings stream tolerates a
+// dropped line far better than stalling the detector waiting on BLE flow ctrl.
+#define WTF_BLE_TX_CAP 4096
+static uint8_t  wtfTxRing[WTF_BLE_TX_CAP];
+static volatile size_t wtfTxHead = 0, wtfTxTail = 0;
+static portMUX_TYPE wtfTxMux = portMUX_INITIALIZER_UNLOCKED;
+
+static void wtfBleEnqueue(const uint8_t* p, size_t n) {
+  if (!wtfBleConnected || !wtfBleReady || n == 0) return;
+  portENTER_CRITICAL(&wtfTxMux);
+  for (size_t i = 0; i < n; i++) {
+    size_t next = (wtfTxHead + 1) % WTF_BLE_TX_CAP;
+    if (next == wtfTxTail) wtfTxTail = (wtfTxTail + 1) % WTF_BLE_TX_CAP;  // full: drop oldest
+    wtfTxRing[wtfTxHead] = p[i];
+    wtfTxHead = next;
+  }
+  portEXIT_CRITICAL(&wtfTxMux);
+}
+
+// RX ring: producer = NimBLE host task (onWrite); consumer = loop().
+#define WTF_BLE_RX_CAP 1024
+static char     wtfRxRing[WTF_BLE_RX_CAP];
+static volatile size_t wtfRxHead = 0, wtfRxTail = 0;
+static portMUX_TYPE wtfRxMux = portMUX_INITIALIZER_UNLOCKED;
+static char     wtfBleCmd[CMD_BUF_LEN];
+static size_t   wtfBleCmdLen = 0;
+
+static void wtfBleRxPush(const uint8_t* p, size_t n) {
+  portENTER_CRITICAL(&wtfRxMux);
+  for (size_t i = 0; i < n; i++) {
+    size_t next = (wtfRxHead + 1) % WTF_BLE_RX_CAP;
+    if (next == wtfRxTail) break;   // full: drop new (command backlog, rare)
+    wtfRxRing[wtfRxHead] = (char)p[i];
+    wtfRxHead = next;
+  }
+  portEXIT_CRITICAL(&wtfRxMux);
+}
+
+// Parse RX bytes into whole {"cmd":...} lines and run the shared handler.
+static void pollBleCommands() {
+  while (true) {
+    char c;
+    portENTER_CRITICAL(&wtfRxMux);
+    if (wtfRxTail == wtfRxHead) { portEXIT_CRITICAL(&wtfRxMux); break; }
+    c = wtfRxRing[wtfRxTail];
+    wtfRxTail = (wtfRxTail + 1) % WTF_BLE_RX_CAP;
+    portEXIT_CRITICAL(&wtfRxMux);
+    if (c == '\n' || c == '\r') {
+      if (wtfBleCmdLen > 0) { wtfBleCmd[wtfBleCmdLen] = '\0'; handleCommandLine(wtfBleCmd); wtfBleCmdLen = 0; }
+    } else if (wtfBleCmdLen < CMD_BUF_LEN - 1) {
+      wtfBleCmd[wtfBleCmdLen++] = c;
+    } else {
+      wtfBleCmdLen = 0;   // overflow — discard the whole line
+    }
+  }
+}
+
+// Drain the TX ring to notifications. A few packets per loop pass keeps loop()
+// responsive; the 4 KB ring absorbs bursts between BLE connection intervals.
+static void wtfBleTxPump() {
+  if (!wtfBleConnected || !wtfBleReady || !wtfBleTx) return;
+  uint16_t chunk = (wtfBleMtu > 3) ? (uint16_t)(wtfBleMtu - 3) : 20;
+  if (chunk > 180) chunk = 180;
+  uint8_t pkt[180];
+  for (int pass = 0; pass < 3; pass++) {
+    size_t got = 0;
+    portENTER_CRITICAL(&wtfTxMux);
+    while (got < chunk && wtfTxTail != wtfTxHead) {
+      pkt[got++] = wtfTxRing[wtfTxTail];
+      wtfTxTail = (wtfTxTail + 1) % WTF_BLE_TX_CAP;
+    }
+    portEXIT_CRITICAL(&wtfTxMux);
+    if (got == 0) break;
+    wtfBleTx->setValue(pkt, got);
+    wtfBleTx->notify();
+  }
+}
+
+class WtfBleServerCb : public NimBLEServerCallbacks {
+  void onConnect(NimBLEServer*) override { wtfBleConnected = true; }
+  void onDisconnect(NimBLEServer*) override {
+    wtfBleConnected = false; wtfBleReady = false; wtfBleMtu = 23;
+    portENTER_CRITICAL(&wtfTxMux); wtfTxHead = wtfTxTail = 0; portEXIT_CRITICAL(&wtfTxMux);
+    NimBLEDevice::startAdvertising();   // become connectable again
+  }
+  void onMTUChange(uint16_t mtu, ble_gap_conn_desc*) override { wtfBleMtu = mtu; }
+};
+static WtfBleServerCb wtfBleServerCb;
+
+class WtfBleTxCb : public NimBLECharacteristicCallbacks {
+  void onSubscribe(NimBLECharacteristic*, ble_gap_conn_desc*, uint16_t subValue) override {
+    wtfBleReady = (subValue != 0);
+  }
+};
+static WtfBleTxCb wtfBleTxCb;
+
+class WtfBleRxCb : public NimBLECharacteristicCallbacks {
+  void onWrite(NimBLECharacteristic* c) override {
+    std::string v = c->getValue();
+    if (!v.empty()) wtfBleRxPush((const uint8_t*)v.data(), v.size());
+  }
+};
+static WtfBleRxCb wtfBleRxCb;
+
+// Stand up the GATT peripheral and start advertising. Call after fyBleStart()
+// (which inits NimBLE + starts the passive scan).
+static void wtfBleBridgeStart() {
   if (!NimBLEDevice::getInitialized()) NimBLEDevice::init("");
+  NimBLEDevice::setMTU(247);   // allow larger notifies once the app negotiates up
+  wtfBleServer = NimBLEDevice::createServer();
+  wtfBleServer->setCallbacks(&wtfBleServerCb);
+  NimBLEService* svc = wtfBleServer->createService(WTF_BLE_SVC);
+  wtfBleTx = svc->createCharacteristic(WTF_BLE_TX, NIMBLE_PROPERTY::NOTIFY);
+  wtfBleTx->setCallbacks(&wtfBleTxCb);
+  NimBLECharacteristic* rx =
+      svc->createCharacteristic(WTF_BLE_RX, NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR);
+  rx->setCallbacks(&wtfBleRxCb);
+  svc->start();
+  NimBLEAdvertising* adv = NimBLEDevice::getAdvertising();
+  adv->addServiceUUID(WTF_BLE_SVC);
+  adv->setScanResponse(true);
+  NimBLEDevice::startAdvertising();
+  dualPrintf("[whattheflock] BLE bridge up — advertising \"%s\" svc %s\n", WTF_BLE_NAME, WTF_BLE_SVC);
+}
+
+static void fyBleStart() {
+  if (!NimBLEDevice::getInitialized()) NimBLEDevice::init("");   // bridge usually inits first
   NimBLEScan* s = NimBLEDevice::getScan();
   s->setActiveScan(false);             // passive — never emit SCAN_REQ
   s->setInterval(FY_BLE_SCAN_INTERVAL_MS);
@@ -2343,6 +2507,11 @@ void setup() {
   esp_wifi_set_promiscuous_rx_cb(&wifiSniffer);
   esp_wifi_set_promiscuous(true);
 
+  // Wireless host link FIRST: stand up the GATT peripheral + advertising, then
+  // start the passive scan. Registering GATT services before the scan starts the
+  // host is the order NimBLE expects — doing it after a running scan re-asserts
+  // in ble_svc_gap_init on the next host reset (boot loop).
+  wtfBleBridgeStart();
   // BLE side of the union — passive NimBLE scan sharing the radio with
   // promiscuous WiFi RX (low duty cycle; see the BLE section above).
   fyBleStart();
@@ -2367,9 +2536,11 @@ void setup() {
 
 void loop() {
   updateChannelMode();
-  pollHostCommands();  // dashboard → device (per-tier beep mute)
+  pollHostCommands();  // USB dashboard → device (per-tier beep mute)
+  pollBleCommands();   // BLE app → device (same {"cmd":...} handler)
   fyGpsTick();         // optional GPS module: parse NMEA, set clock from UTC
   drainAlertQueue();   // Serial.printf happens here, not in callback
+  wtfBleTxPump();      // drain the BLE mirror ring to notifications
   autosaveTick();      // periodic SPIFFS write if dirty
   heartbeatTick();     // audible beep-pair while a target is still in range
   ledTick();           // turn off LED after LED_FLASH_MS
