@@ -10,6 +10,8 @@
 #include <SD.h>                 // microSD logging (XIAO Sense), used when USE_SD_CARD
 #include <SPI.h>
 #include "mbedtls/base64.h"
+#include "esp_camera.h"        // OV2640/OV3660 on the XIAO S3 Sense (QR/barcode scan mode)
+#include "quirc/quirc.h"       // QR decode (bundled in ESP32QRCodeReader)
 
 // ============================================================
 // CONFIG  (board defaults; override via platformio build_flags)
@@ -1545,10 +1547,120 @@ static void emitConfigJSON() {
              (unsigned)fyBeepMask, (unsigned)OUI_COUNT, tiers);
 }
 
+// ============================================================
+// QR / BARCODE SCAN MODE  (XIAO ESP32-S3 Sense camera + quirc)
+// ============================================================
+//
+// The camera shares the 2.4 GHz-adjacent CPU/PSRAM budget with the WiFi sniffer,
+// so scanning is a MODE SWITCH, not simultaneous: on CMD {"cmd":"qrscan"} we
+// pause promiscuous RX, bring the camera up, decode for a few seconds, emit the
+// result (QR payload = its own data; a URL is flagged so the phone can offer to
+// open it), then tear the camera down and resume sniffing. The camera is never
+// initialised at boot, so normal detection is completely unaffected.
+//
+// quirc is run in its own task with a generous stack — quirc_decode is stack-
+// hungry and overflows the 8 KB Arduino loop task on the S3 (known crash).
+
+// XIAO ESP32-S3 Sense camera pins (Seeed wiki). SCCB on 40/39 is free here (this
+// board uses the single LED on GPIO21, not the APA102 on 40/39).
+#define FY_CAM_XCLK   10
+#define FY_CAM_SIOD   40
+#define FY_CAM_SIOC   39
+#define FY_CAM_VSYNC  38
+#define FY_CAM_HREF   47
+#define FY_CAM_PCLK   13
+#define FY_CAM_D7     48   // Y9
+#define FY_CAM_D6     11   // Y8
+#define FY_CAM_D5     12   // Y7
+#define FY_CAM_D4     14   // Y6
+#define FY_CAM_D3     16   // Y5
+#define FY_CAM_D2     18   // Y4
+#define FY_CAM_D1     17   // Y3
+#define FY_CAM_D0     15   // Y2
+
+static volatile bool qrScanRunning = false;
+
+static bool fyCameraStart() {
+  camera_config_t c = {};
+  c.ledc_channel = LEDC_CHANNEL_4;   // away from the buzzer's channel
+  c.ledc_timer   = LEDC_TIMER_2;
+  c.pin_d0 = FY_CAM_D0; c.pin_d1 = FY_CAM_D1; c.pin_d2 = FY_CAM_D2; c.pin_d3 = FY_CAM_D3;
+  c.pin_d4 = FY_CAM_D4; c.pin_d5 = FY_CAM_D5; c.pin_d6 = FY_CAM_D6; c.pin_d7 = FY_CAM_D7;
+  c.pin_xclk = FY_CAM_XCLK; c.pin_pclk = FY_CAM_PCLK;
+  c.pin_vsync = FY_CAM_VSYNC; c.pin_href = FY_CAM_HREF;
+  c.pin_sccb_sda = FY_CAM_SIOD; c.pin_sccb_scl = FY_CAM_SIOC;
+  c.pin_pwdn = -1; c.pin_reset = -1;
+  c.xclk_freq_hz = 20000000;
+  c.pixel_format = PIXFORMAT_GRAYSCALE;   // quirc wants grayscale
+  c.frame_size   = FRAMESIZE_QVGA;        // 320x240 — plenty for a QR in frame
+  c.fb_count     = 1;
+  c.fb_location  = CAMERA_FB_IN_PSRAM;
+  c.grab_mode    = CAMERA_GRAB_LATEST;
+  esp_err_t err = esp_camera_init(&c);
+  if (err != ESP_OK) { fyPrintAll("{\"event\":\"scan\",\"error\":\"camera init 0x%x\"}\n", (unsigned)err); return false; }
+  return true;
+}
+
+static void fyQrScanTask(void *) {
+  qrScanRunning = true;
+  esp_wifi_set_promiscuous(false);   // free the radio/CPU for the camera
+  fyPrintAll("{\"event\":\"scan\",\"state\":\"start\"}\n");
+
+  if (!fyCameraStart()) {
+    esp_wifi_set_promiscuous(true);
+    qrScanRunning = false;
+    vTaskDelete(nullptr);
+    return;
+  }
+
+  struct quirc *q = quirc_new();
+  bool found = false;
+  const uint32_t t0 = millis();
+  while (q && !found && millis() - t0 < 8000) {
+    camera_fb_t *fb = esp_camera_fb_get();
+    if (!fb) { delay(60); continue; }
+    if (quirc_resize(q, fb->width, fb->height) >= 0) {
+      int w = 0, h = 0;
+      uint8_t *img = quirc_begin(q, &w, &h);
+      if (img && (size_t)(w * h) <= fb->len) memcpy(img, fb->buf, (size_t)w * h);
+      quirc_end(q);
+      int n = quirc_count(q);
+      for (int i = 0; i < n && !found; i++) {
+        struct quirc_code code; struct quirc_data data;
+        quirc_extract(q, i, &code);
+        if (quirc_decode(&code, &data) == QUIRC_SUCCESS) {
+          size_t plen = data.payload_len;
+          if (plen >= sizeof(data.payload)) plen = sizeof(data.payload) - 1;
+          data.payload[plen] = 0;
+          char esc[1024];
+          jsonEscape(esc, sizeof(esc), (const char *)data.payload);
+          const char *kind = (strncasecmp((const char *)data.payload, "http", 4) == 0) ? "url" : "text";
+          fyPrintAll("{\"event\":\"scan\",\"kind\":\"%s\",\"data\":\"%s\"}\n", kind, esc);
+          found = true;
+        }
+      }
+    }
+    esp_camera_fb_return(fb);
+    delay(10);
+  }
+  if (!found) fyPrintAll("{\"event\":\"scan\",\"state\":\"timeout\"}\n");
+
+  if (q) quirc_destroy(q);
+  esp_camera_deinit();
+  esp_wifi_set_promiscuous(true);    // resume the sniffer
+  qrScanRunning = false;
+  vTaskDelete(nullptr);
+}
+
 static void handleCommandLine(const char* line) {
   if (!strstr(line, "\"cmd\"")) return;
 
   if (fySdHandle(line)) return;   // microSD log / backup / clock commands
+
+  if (strstr(line, "\"qrscan\"")) {
+    if (!qrScanRunning) xTaskCreatePinnedToCore(fyQrScanTask, "qrscan", 20000, nullptr, 1, nullptr, 1);
+    return;
+  }
 
   if (strstr(line, "\"dump_session\"")) {
     if (strstr(line, "\"prev\"")) fyDumpFileSession(FY_PREV_FILE, "prev");
